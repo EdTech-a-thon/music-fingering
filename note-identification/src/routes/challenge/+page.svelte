@@ -36,7 +36,7 @@
 		font-weight: 800;
 	}
 	.back {
-		color: #4f46e5;
+		color: var(--blue);
 		text-decoration: none;
 		font-weight: 600;
 		font-size: 0.9rem;

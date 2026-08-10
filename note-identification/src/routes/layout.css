@@ -1,6 +1,14 @@
 @import 'tailwindcss';
 
 :root {
+	--blue: #2563eb;
+	--blue-dark: #1d4ed8;
+	--blue-soft: #eff6ff;
+	--blue-border: #bfdbfe;
+	--border: #e3e4ea;
+	--card: #f7f8fa;
+	--radius: 14px;
+
 	font-family:
 		system-ui,
 		-apple-system,
@@ -8,7 +16,10 @@
 		Roboto,
 		sans-serif;
 	color: #1a1a1a;
-	background: #ffffff;
+}
+
+* {
+	box-sizing: border-box;
 }
 
 body {
@@ -16,6 +27,66 @@ body {
 	background: #fbfbfd;
 }
 
-* {
-	box-sizing: border-box;
+/* Shared button styles (global so components can use them) */
+.btn-primary,
+.btn-ghost,
+.btn-dark {
+	padding: 0.6rem 1.15rem;
+	border-radius: 10px;
+	font-size: 0.95rem;
+	font-weight: 600;
+	cursor: pointer;
+	border: 1px solid transparent;
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 1;
+}
+.btn-primary {
+	background: var(--blue);
+	color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+	background: var(--blue-dark);
+}
+.btn-primary:disabled {
+	background: #c3c8d4;
+	cursor: default;
+}
+.btn-ghost {
+	background: #fff;
+	color: var(--blue-dark);
+	border-color: var(--blue-border);
+}
+.btn-ghost:hover {
+	background: var(--blue-soft);
+}
+.btn-dark {
+	background: #1f2937;
+	color: #fff;
+}
+.btn-dark:hover {
+	background: #111827;
+}
+
+/* Print: show only the progress report */
+@media print {
+	body * {
+		visibility: hidden;
+	}
+	.print-area,
+	.print-area * {
+		visibility: visible;
+	}
+	.print-area {
+		position: absolute;
+		inset: 0;
+		max-width: none !important;
+		box-shadow: none !important;
+		padding: 0 !important;
+	}
+	.no-print {
+		display: none !important;
+	}
 }

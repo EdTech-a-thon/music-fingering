@@ -1,21 +1,43 @@
 # Note Naming Practice
 
-A simple web app for practising note identification on the musical staff.
+A web app for practising note identification on the musical staff, with a
+customizer and a shareable challenge link.
 
-- **Set up a challenge** on the home page: choose clefs (treble, bass, alto,
-  tenor), whether to include sharps & flats, letters vs. solfège names, whether
-  to include ledger lines, and how many questions.
-- **Try it live** in the student preview on the right as you change settings.
-- **Share a link** with students; the link opens straight into the challenge.
+## Setting up a challenge (home page)
+
+Configure the exercise on the left; a live student preview updates on the right.
+
+- **Clefs** — Treble, Bass, Alto, Tenor
+- **Range** — the lowest and highest note that can appear
+- **Positions** — lines and spaces, lines only, or spaces only
+- **Key signatures** — none, 1–7 sharps, 1–7 flats (pick several for a mix); shown
+  on the staff and reflected in the correct answer
+- **Note values** — whole, half, quarter (visual)
+- **Accidentals** — allow explicit sharps/flats on notes
+- **Helpers** — blue letter labels beside the staff
+- **Challenge mode** — a question limit and/or time limit, and whether students may
+  retry a wrong answer (multiple attempts)
+
+Every change updates the shareable link at the bottom; send it to students.
+
+## Taking a challenge
+
+Opening a challenge link shows a Start gate — the clock and score begin only when
+the student presses **Start Challenge**. The top bar shows a running
+correct/attempted score and percentage plus the progress toward the limit. When
+the run ends, a results screen shows the score, percentage and elapsed time, and a
+**Progress Report** (with every setting used) that can be printed and optionally
+signed to produce a verification code.
 
 ## About
 
-This is an original, from-scratch implementation. It was inspired by the general
-idea of an online note-naming exercise, but contains none of any other site's
-code, artwork, audio, or branding.
+This is an original, from-scratch implementation, inspired by the general idea of
+an online note-naming exercise but containing none of any other site's code,
+artwork, audio, or branding. The clef symbols are standard public-domain
+music-notation glyphs (G, F, and C clefs) from Wikimedia Commons.
 
-The clef symbols are standard music-notation glyphs from Wikimedia Commons
-(public domain): the G, F, and C clefs.
+Not yet implemented (kept simple for now): naming systems other than letters,
+audio, and the per-spelling note filter.
 
 ## Running
 
