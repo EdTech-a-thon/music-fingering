@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Exercise from '$lib/Exercise.svelte';
 	import { CLEF_NAMES, diatonicIndex, noteName, type Clef, type NoteValue } from '$lib/music';
 	import { DEFAULT_SETTINGS, settingsToQuery, type Settings } from '$lib/settings';
 
@@ -56,13 +55,10 @@
 <div class="page">
 	<header class="intro">
 		<h1>Note Naming Practice</h1>
-		<p>
-			Choose your settings on the left, try it in the preview, then share the link with students.
-		</p>
+		<p>Choose your settings, then share the link with students.</p>
 	</header>
 
 	<div class="layout">
-		<!-- LEFT: settings -->
 		<section class="panel settings" aria-label="Settings">
 			<fieldset>
 				<legend>Clefs</legend>
@@ -206,14 +202,6 @@
 				>
 			</fieldset>
 		</section>
-
-		<!-- RIGHT: live student preview -->
-		<section class="panel preview" aria-label="Student preview">
-			<div class="preview-tag">Student preview</div>
-			{#key settingsToQuery(settings)}
-				<Exercise {settings} />
-			{/key}
-		</section>
 	</div>
 
 	<section class="sharebar">
@@ -231,7 +219,7 @@
 
 <style>
 	.page {
-		max-width: 72rem;
+		max-width: 40rem;
 		margin: 0 auto;
 		padding: 1.5rem 1.25rem 3rem;
 	}
@@ -244,39 +232,11 @@
 		color: #555;
 		margin-bottom: 1.5rem;
 	}
-	.layout {
-		display: grid;
-		grid-template-columns: 22rem 1fr;
-		gap: 1.5rem;
-		align-items: start;
-	}
-	@media (max-width: 820px) {
-		.layout {
-			grid-template-columns: 1fr;
-		}
-	}
 	.panel {
 		background: var(--card);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		padding: 1.25rem;
-	}
-	.preview {
-		position: relative;
-		padding-top: 2.5rem;
-		background: #fff;
-		position: sticky;
-		top: 1rem;
-	}
-	.preview-tag {
-		position: absolute;
-		top: 0.85rem;
-		left: 1.25rem;
-		font-size: 0.72rem;
-		font-weight: 700;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: #99a;
 	}
 	fieldset {
 		border: none;
