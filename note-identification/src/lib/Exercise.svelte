@@ -2,6 +2,7 @@
 	// The student's view: shows a note, collects an answer, gives feedback,
 	// and reports a score at the end. Used both in the live preview and on the
 	// stand-alone challenge page.
+	import { onDestroy } from 'svelte';
 	import Staff from './Staff.svelte';
 	import { randomNote, noteId, noteLabel, type Accidental, type Clef, type Note } from './music';
 	import type { Settings } from './settings';
@@ -29,15 +30,21 @@
 
 	const correctId = $derived(noteId(current.note.letter, current.note.accidental));
 
+	// After an answer we pause briefly, then move on by ourselves. A wrong answer
+	// gets a longer pause so the student can take in the correct note.
+	let advanceTimer: ReturnType<typeof setTimeout> | undefined;
+
 	function choose(letter: string) {
 		if (answered) return;
 		const chosenId = noteId(letter, pendingAccidental);
 		const correct = chosenId === correctId;
 		if (correct) score += 1;
 		answered = { chosenId, correct };
+		advanceTimer = setTimeout(next, correct ? 800 : 1600);
 	}
 
 	function next() {
+		clearTimeout(advanceTimer);
 		if (index + 1 >= settings.count) {
 			elapsedMs = Date.now() - startTime;
 			phase = 'done';
@@ -49,7 +56,10 @@
 		answered = null;
 	}
 
+	onDestroy(() => clearTimeout(advanceTimer));
+
 	function restart() {
+		clearTimeout(advanceTimer);
 		index = 0;
 		score = 0;
 		current = newQuestion();
@@ -122,12 +132,6 @@
 					{noteLabel(letter, pendingAccidental, settings.labels)}
 				</button>
 			{/each}
-		</div>
-
-		<div class="actions">
-			<button type="button" class="next" disabled={!answered} onclick={next}>
-				{index + 1 >= settings.count ? 'Finish' : 'Next note'}
-			</button>
 		</div>
 	{:else}
 		<div class="results">
@@ -225,10 +229,6 @@
 		cursor: default;
 		opacity: 0.85;
 	}
-	.actions {
-		display: flex;
-		justify-content: center;
-	}
 	.next {
 		padding: 0.7rem 1.6rem;
 		font-size: 1rem;
@@ -238,10 +238,6 @@
 		background: #4f46e5;
 		color: #fff;
 		cursor: pointer;
-	}
-	.next:disabled {
-		background: #c7c9d9;
-		cursor: default;
 	}
 	.results {
 		text-align: center;
