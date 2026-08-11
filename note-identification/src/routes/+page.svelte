@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { CLEF_NAMES, diatonicIndex, noteName, type Clef, type NoteValue } from '$lib/music';
+	import { CLEF_NAMES, type Clef, type NoteValue } from '$lib/music';
 	import { DEFAULT_SETTINGS, settingsToQuery, type Settings } from '$lib/settings';
+	import RangeSelector from '$lib/RangeSelector.svelte';
+	import Staff from '$lib/Staff.svelte';
 
 	let settings = $state<Settings>(structuredClone(DEFAULT_SETTINGS));
 
@@ -10,21 +12,12 @@
 	const SHARPS = [1, 2, 3, 4, 5, 6, 7];
 	const FLATS = [1, 2, 3, 4, 5, 6, 7];
 
-	// Note choices for the range pickers (C2 … C7).
-	const noteOptions = (() => {
-		const opts: string[] = [];
-		for (let i = diatonicIndex('C', 2); i <= diatonicIndex('C', 7); i++) opts.push(noteName(i));
-		return opts;
-	})();
-
 	const questionLimits = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 	const timeLimits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30];
 
 	// Toggle helpers that keep at least one option selected where required.
-	function toggleClef(clef: Clef) {
-		if (settings.clefs.includes(clef)) {
-			if (settings.clefs.length > 1) settings.clefs = settings.clefs.filter((c) => c !== clef);
-		} else settings.clefs = [...settings.clefs, clef];
+	function selectClef(clef: Clef) {
+		settings.clefs = [clef];
 	}
 	function toggleValue(v: NoteValue) {
 		if (settings.noteValues.includes(v)) {
@@ -66,30 +59,28 @@
 					{#each ALL_CLEFS as clef (clef)}
 						<button
 							type="button"
-							class="chip"
+							class="chip clef-chip"
 							class:on={settings.clefs.includes(clef)}
-							onclick={() => toggleClef(clef)}>{CLEF_NAMES[clef]}</button
+							onclick={() => selectClef(clef)}
 						>
+							<span class="clef-preview" aria-hidden="true"><Staff {clef} /></span>
+							<span>{CLEF_NAMES[clef]}</span>
+						</button>
 					{/each}
 				</div>
 			</fieldset>
 
 			<fieldset>
 				<legend>Range</legend>
-				<div class="range">
-					<label
-						>Lowest
-						<select bind:value={settings.rangeLow}>
-							{#each noteOptions as n (n)}<option value={n}>{n}</option>{/each}
-						</select>
-					</label>
-					<label
-						>Highest
-						<select bind:value={settings.rangeHigh}>
-							{#each noteOptions as n (n)}<option value={n}>{n}</option>{/each}
-						</select>
-					</label>
-				</div>
+				<RangeSelector
+					clef={settings.clefs[0] ?? 'treble'}
+					low={settings.rangeLow}
+					high={settings.rangeHigh}
+					onchange={(low, high) => {
+						settings.rangeLow = low;
+						settings.rangeHigh = high;
+					}}
+				/>
 			</fieldset>
 
 			<fieldset>
@@ -272,6 +263,17 @@
 		background: var(--blue);
 		border-color: var(--blue);
 		color: #fff;
+	}
+	.clef-chip {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.35rem 0.7rem 0.35rem 0.45rem;
+	}
+	.clef-preview {
+		display: block;
+		width: 4rem;
+		color: #1a1a1a;
 	}
 	.chip.block {
 		display: block;
