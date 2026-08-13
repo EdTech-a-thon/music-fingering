@@ -25,8 +25,10 @@
 	import {
 		fromQuery,
 		loadPresets,
+		loadQrOpen,
 		loadWorking,
 		newId,
+		saveQrOpen,
 		sameSettings,
 		savePresets,
 		saveWorking,
@@ -160,6 +162,7 @@
 
 	onMount(() => {
 		origin = window.location.origin;
+		qrOpen = loadQrOpen();
 		presets = loadPresets();
 		const working = loadWorking();
 		if (working) {
@@ -295,8 +298,14 @@
 	const qr = $derived(origin ? makeQr(link) : null);
 
 	// Hidden until asked for: shown it is the tallest thing in the card, and most
-	// of the time the teacher only wants the link.
+	// of the time the teacher only wants the link. Whichever way it is left is
+	// remembered, so a teacher who projects the code every lesson finds it up.
 	let qrOpen = $state(false);
+
+	function toggleQr() {
+		qrOpen = !qrOpen;
+		saveQrOpen(qrOpen);
+	}
 	let qrCopied = $state(false);
 	let qrNote = $state('');
 
@@ -752,7 +761,7 @@
 						<button
 							type="button"
 							class="iconbtn"
-							onclick={() => (qrOpen = !qrOpen)}
+							onclick={toggleQr}
 							aria-expanded={qrOpen}
 							aria-label={qrOpen ? 'Hide the QR code' : 'Show the QR code'}
 							title={qrOpen ? 'Hide' : 'Show'}

@@ -10,6 +10,7 @@ import { settingsFromParams, settingsToQuery, type Settings } from './settings';
 
 const WORKING_KEY = 'noteid:working';
 const PRESETS_KEY = 'noteid:presets';
+const QR_OPEN_KEY = 'noteid:qropen';
 
 export interface Preset {
 	id: string;
@@ -88,4 +89,17 @@ export function loadPresets(): Preset[] {
 
 export function savePresets(list: Preset[]): void {
 	write(PRESETS_KEY, list);
+}
+
+/**
+ * Whether the QR code is left showing. This is how the teacher likes to work
+ * rather than part of any activity, so it is kept apart from the settings —
+ * showing the code is not an edit, and never counts as an unsaved change.
+ */
+export function loadQrOpen(): boolean {
+	return read(QR_OPEN_KEY) === true;
+}
+
+export function saveQrOpen(open: boolean): void {
+	write(QR_OPEN_KEY, open);
 }
