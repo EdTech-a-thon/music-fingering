@@ -454,7 +454,7 @@
 		<!-- Rides alongside the settings and follows the teacher down the page, so
 		     the link is in reach whatever they are in the middle of changing. -->
 		<aside class="sharebar">
-			<p class="sharetitle">Share this challenge with students</p>
+			<p class="sharetitle">Share with students</p>
 
 			<!-- The link is the button: clicking it opens the challenge, and the
 			     icon beside it copies the address instead. -->
