@@ -12,14 +12,17 @@ import {
 import {
 	ALL_INSTRUMENTS,
 	BASS_POSITIONS,
+	ALL_POSITION_SYSTEMS,
 	DEFAULT_BASS_POSITIONS,
 	FINGER_SETS,
 	INSTRUMENTS,
 	playableRange,
+	SYSTEM_POSITIONS,
 	type FingeringOptions,
 	type FingerId,
 	type Instrument,
-	type PositionId
+	type PositionId,
+	type PositionSystem
 } from './strings';
 
 export interface Settings {
@@ -34,6 +37,7 @@ export interface Settings {
 	key: KeyId; // the key signature on the staff
 	askString: boolean;
 	askFinger: boolean;
+	positionSystem: PositionSystem; // Simandl or Rabbath position names
 	bassPositions: PositionId[]; // which positions bass answers may use
 	fingers: FingerId[]; // which fingers the student may be asked for
 	// Challenge mode
@@ -68,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	key: 'C',
 	askString: true,
 	askFinger: true,
+	positionSystem: 'simandl',
 	bassPositions: DEFAULT_BASS_POSITIONS,
 	fingers: [...FINGER_SETS[DEFAULT_INSTRUMENT]],
 	questionLimit: 0,
@@ -92,6 +97,21 @@ export function applyInstrument(s: Settings, choice: Instrument): Settings {
 		rangeLow: limits.low,
 		rangeHigh: limits.high
 	};
+}
+
+/**
+ * Switching position system keeps whichever positions the new system also has.
+ * Only Simandl's 2nd position is lost on the way to Rabbath; the other three
+ * shapes are shared, so a teacher's choice normally survives the switch intact.
+ */
+export function applyPositionSystem(s: Settings, system: PositionSystem): Settings {
+	const offered = SYSTEM_POSITIONS[system];
+	const kept = s.bassPositions.filter((p) => offered.includes(p));
+	return clampRange({
+		...s,
+		positionSystem: system,
+		bassPositions: kept.length ? kept : DEFAULT_BASS_POSITIONS
+	});
 }
 
 /**
@@ -146,6 +166,7 @@ export function settingsToQuery(s: Settings): string {
 	p.set('key', s.key);
 	p.set('askstr', s.askString ? '1' : '0');
 	p.set('askfin', s.askFinger ? '1' : '0');
+	p.set('sys', s.positionSystem);
 	p.set('bpos', s.bassPositions.join(','));
 	p.set('fing', s.fingers.join(','));
 	p.set('qlim', String(s.questionLimit));
@@ -166,8 +187,17 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 		? (rawInst as Instrument)
 		: d.instrument;
 
-	const bassPositions = csv(params.get('bpos')).filter((p): p is PositionId =>
-		ALL_POSITIONS.includes(p as PositionId)
+	const rawSystem = params.get('sys');
+	const positionSystem: PositionSystem = ALL_POSITION_SYSTEMS.includes(rawSystem as PositionSystem)
+		? (rawSystem as PositionSystem)
+		: d.positionSystem;
+
+	// Links written before the systems existed carry Simandl positions, which is
+	// also what an unnamed system falls back to.
+	const bassPositions = csv(params.get('bpos')).filter(
+		(p): p is PositionId =>
+			ALL_POSITIONS.includes(p as PositionId) &&
+			SYSTEM_POSITIONS[positionSystem].includes(p as PositionId)
 	);
 
 	const rawKey = params.get('key');
@@ -194,6 +224,7 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 		key,
 		askString: bool(params.get('askstr'), d.askString),
 		askFinger: bool(params.get('askfin'), d.askFinger),
+		positionSystem,
 		bassPositions: bassPositions.length ? bassPositions : d.bassPositions,
 		fingers: fingers.length ? fingers : [...FINGER_SETS[instrument]],
 		questionLimit: clampLimit(params.get('qlim')),

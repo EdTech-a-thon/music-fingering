@@ -116,10 +116,13 @@ const CELLO_FIRST: HandPosition = {
 	offsets: { x1: 1, '1': 2, '2': 3, x2: 4, '3': 4, '4': 5, x4: 6 }
 };
 
-// The bass uses Simandl 1-2-4 fingering — no third finger down here — and the
-// hand spans only a major third while the strings are a fourth apart. A scale
+// The bass uses 1-2-4 fingering — no third finger down here — and the hand
+// spans only a minor third while the strings are a fourth apart. A scale
 // therefore does not fit in one position, which is why the bass is the only
 // instrument that has to be asked where the hand is.
+//
+// These are hand shapes, not names. Both position systems below use exactly
+// these four, so the ids stay neutral and each system supplies its own names.
 export const BASS_POSITIONS: HandPosition[] = [
 	{ id: 'half', label: '½', offsets: { '1': 1, '2': 2, '4': 3 } },
 	{ id: 'I', label: 'I', offsets: { '1': 2, '2': 3, '4': 4 } },
@@ -127,15 +130,65 @@ export const BASS_POSITIONS: HandPosition[] = [
 	{ id: 'III', label: 'III', offsets: { '1': 5, '2': 6, '4': 7 } }
 ];
 
-export const POSITION_NAMES: Record<PositionId, string> = {
+// ---------------------------------------------------------------------------
+// Position systems
+// ---------------------------------------------------------------------------
+
+/**
+ * The two systems school bassists are taught by. They are not two sets of hand
+ * shapes — the hands are the same, and both finger 1-2-4 down the neck. What
+ * differs is how the positions are found and therefore what they are called:
+ * Simandl counts up the fingerboard a half step at a time, while Rabbath names
+ * each position after the natural harmonic it is found by.
+ *
+ * The consequence for us is small. Rabbath's 2nd position puts the first finger
+ * on C on the G string — the same notes with the same fingers that Simandl
+ * calls 3rd position. So the shape 'III' above is shared, and only its name
+ * changes with the system.
+ */
+export type PositionSystem = 'simandl' | 'rabbath';
+
+export const ALL_POSITION_SYSTEMS: PositionSystem[] = ['simandl', 'rabbath'];
+
+export const POSITION_SYSTEM_NAMES: Record<PositionSystem, string> = {
+	simandl: 'Simandl',
+	rabbath: 'Rabbath'
+};
+
+/**
+ * The positions each system offers, low to high. Rabbath has no equivalent of
+ * Simandl's 2nd position: the shape between them belongs to Simandl's half-step
+ * ladder and has no harmonic to name it by.
+ */
+export const SYSTEM_POSITIONS: Record<PositionSystem, PositionId[]> = {
+	simandl: ['half', 'I', 'II', 'III'],
+	rabbath: ['half', 'I', 'III']
+};
+
+const SIMANDL_NAMES: Record<PositionId, string> = {
 	half: 'Half position',
 	I: 'First position',
 	II: 'Second position',
 	III: 'Third position'
 };
 
-export function positionLabel(id: PositionId): string {
+// Only where a system departs from the Simandl names above. Rabbath counts the
+// shared top shape as its 2nd position rather than its 3rd.
+const RENAMED: Record<PositionSystem, Partial<Record<PositionId, [string, string]>>> = {
+	simandl: {},
+	rabbath: { III: ['II', 'Second position'] }
+};
+
+/** The short button text for a position: '½', 'I', 'II'. */
+export function positionLabel(id: PositionId, system: PositionSystem = 'simandl'): string {
+	const renamed = RENAMED[system][id];
+	if (renamed) return renamed[0];
 	return BASS_POSITIONS.find((p) => p.id === id)?.label ?? id;
+}
+
+/** The spoken name, used when reading an answer back: 'Third position'. */
+export function positionName(id: PositionId, system: PositionSystem = 'simandl'): string {
+	return RENAMED[system][id]?.[1] ?? SIMANDL_NAMES[id];
 }
 
 export interface InstrumentDef {
@@ -181,7 +234,11 @@ export const INSTRUMENTS: Record<Instrument, InstrumentDef> = {
 	}
 };
 
-/** The positions a beginning bassist is normally taught first. */
+/**
+ * The positions a beginning bassist is normally taught first — and the three a
+ * school player actually uses. They are the same three in either system; only
+ * the last one's name changes (Simandl 3rd, Rabbath 2nd).
+ */
 export const DEFAULT_BASS_POSITIONS: PositionId[] = ['half', 'I', 'III'];
 
 /**
@@ -284,9 +341,13 @@ export function preferredFingering(options: Fingering[]): Fingering | null {
 }
 
 /** "G string, 4th finger, third position" — used when revealing an answer. */
-export function describeFingering(inst: Instrument, f: Fingering): string {
+export function describeFingering(
+	inst: Instrument,
+	f: Fingering,
+	system: PositionSystem = 'simandl'
+): string {
 	const parts = [`${stringName(inst, f.string)} string`, FINGERS[f.finger].name];
-	if (f.position) parts.push(POSITION_NAMES[f.position].toLowerCase());
+	if (f.position) parts.push(positionName(f.position, system).toLowerCase());
 	return parts.join(', ');
 }
 

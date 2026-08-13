@@ -10,6 +10,7 @@
 	} from '$lib/music';
 	import {
 		applyInstrument,
+		applyPositionSystem,
 		asksPosition,
 		clampRange,
 		DEFAULT_SETTINGS,
@@ -21,17 +22,21 @@
 	} from '$lib/settings';
 	import {
 		ALL_INSTRUMENTS,
-		BASS_POSITIONS,
+		ALL_POSITION_SYSTEMS,
 		FINGERS,
 		FINGER_SETS,
 		INSTRUMENT_NAMES,
 		INSTRUMENTS,
 		playableNotes,
 		playableRange,
-		POSITION_NAMES,
+		positionLabel,
+		positionName,
+		POSITION_SYSTEM_NAMES,
+		SYSTEM_POSITIONS,
 		type FingerId,
 		type Instrument,
-		type PositionId
+		type PositionId,
+		type PositionSystem
 	} from '$lib/strings';
 	import RangeSelector from '$lib/RangeSelector.svelte';
 	import Staff from '$lib/Staff.svelte';
@@ -64,11 +69,18 @@
 		settings = clampRange({ ...settings, key });
 	}
 
-	// Positions the bass answers may use. Keep at least one, and re-clamp the
-	// range, since dropping third position takes the top two notes out of reach.
+	// Which system names the bass positions. The hand shapes are the same either
+	// way, so this mostly changes what the student is asked to call them.
+	function selectPositionSystem(system: PositionSystem) {
+		settings = applyPositionSystem(settings, system);
+	}
+
+	// Positions the bass answers may use, from the ones the chosen system offers.
+	// Keep at least one, and re-clamp the range, since dropping the top position
+	// takes the top two notes out of reach.
 	function toggleBassPosition(p: PositionId) {
 		const has = settings.bassPositions.includes(p);
-		const next = BASS_POSITIONS.map((b) => b.id).filter((id) =>
+		const next = SYSTEM_POSITIONS[settings.positionSystem].filter((id) =>
 			id === p ? !has : settings.bassPositions.includes(id)
 		);
 		if (!next.length) return;
@@ -209,19 +221,42 @@
 
 			{#if asksPosition(settings)}
 				<fieldset>
+					<legend>Position system</legend>
+					<p class="hint">
+						Both systems use the same hand shapes and the same 1-2-4 fingering down the neck — they
+						differ in how the positions are found, and so in what they are called. Rabbath's 2nd
+						position is the same notes with the same fingers that Simandl calls 3rd.
+					</p>
+					<div class="chips">
+						{#each ALL_POSITION_SYSTEMS as choice (choice)}
+							<button
+								type="button"
+								class="chip"
+								class:on={settings.positionSystem === choice}
+								onclick={() => selectPositionSystem(choice)}
+								>{POSITION_SYSTEM_NAMES[choice]}</button
+							>
+						{/each}
+					</div>
+				</fieldset>
+
+				<fieldset>
 					<legend>Positions</legend>
 					<p class="hint">
 						The bass hand spans less than the gap between its strings, so a scale needs more than
 						one position. Students are only asked for positions you enable here.
 					</p>
 					<div class="chips">
-						{#each BASS_POSITIONS as pos (pos.id)}
+						{#each SYSTEM_POSITIONS[settings.positionSystem] as id (id)}
 							<button
 								type="button"
 								class="chip"
-								class:on={settings.bassPositions.includes(pos.id)}
-								onclick={() => toggleBassPosition(pos.id)}
-								>{POSITION_NAMES[pos.id]} ({pos.label})</button
+								class:on={settings.bassPositions.includes(id)}
+								onclick={() => toggleBassPosition(id)}
+								>{positionName(id, settings.positionSystem)} ({positionLabel(
+									id,
+									settings.positionSystem
+								)})</button
 							>
 						{/each}
 					</div>

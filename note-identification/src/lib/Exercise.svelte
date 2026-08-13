@@ -33,7 +33,7 @@
 		isOpen,
 		playableRange,
 		positionLabel,
-		POSITION_NAMES,
+		positionName,
 		preferredFingering,
 		type Fingering,
 		type PositionId
@@ -199,7 +199,10 @@
 				.map((id) => ({ key: id, label: FINGERS[id].label }));
 		// Without the string step the note may still turn out to be an open one,
 		// which is an answer in its own right rather than a position.
-		const positions = settings.bassPositions.map((p) => ({ key: p, label: positionLabel(p) }));
+		const positions = settings.bassPositions.map((p) => ({
+			key: p,
+			label: positionLabel(p, settings.positionSystem)
+		}));
 		return options.some(isOpen) ? [{ key: 'open', label: 'Open' }, ...positions] : positions;
 	});
 
@@ -223,7 +226,7 @@
 		if (step === 'note') return noteLabel(settings.key, key);
 		if (step === 'string') return `${def.strings[Number(key)].replace(/\d+$/, '')} string`;
 		if (step === 'finger') return key === 'open' ? 'Open' : `Finger ${FINGERS[key].label}`;
-		return key === 'open' ? 'Open' : POSITION_NAMES[key as PositionId];
+		return key === 'open' ? 'Open' : positionName(key as PositionId, settings.positionSystem);
 	}
 
 	const promptText = $derived(
@@ -245,7 +248,8 @@
 		if (step === 'string') return `It was the ${def.strings[f.string].replace(/\d+$/, '')} string`;
 		if (step === 'finger')
 			return isOpen(f) ? 'It was an open string' : `It was the ${FINGERS[f.finger].name}`;
-		if (f.position) return `It was ${POSITION_NAMES[f.position].toLowerCase()}`;
+		if (f.position)
+			return `It was ${positionName(f.position, settings.positionSystem).toLowerCase()}`;
 		return isOpen(f) ? 'It was an open string' : '';
 	});
 
