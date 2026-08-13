@@ -4,9 +4,10 @@
 	import ClefGlyph from './Clef.svelte';
 	import { ACCIDENTALS, ENGRAVING, NOTEHEADS } from './glyphs';
 	import {
+		accidentalSteps,
 		BOTTOM_LINE,
-		KEY_SHARPS,
-		SHARP_STEPS,
+		keyAccidental,
+		keyLetters,
 		RANGE_MARGIN,
 		noteName,
 		parseNoteName,
@@ -70,16 +71,18 @@
 	const yFor = (index: number) => yForSteps(stepsAboveBottom(clef, index));
 
 	// The key signature, so the teacher picks a range against the staff the
-	// student will actually read.
-	const sharpGlyph = ACCIDENTALS.sharp;
-	const sharpStep = (sharpGlyph.width + 0.25) * lineGap;
-	const keyAccidentals = $derived(
-		KEY_SHARPS[keySig].map((letter, i) => ({
+	// student will actually read. Sharps or flats, drawn the same way the
+	// exercise staff draws them.
+	const sigGlyph = $derived(ACCIDENTALS[keyAccidental(keySig)]);
+	const keyAccidentals = $derived.by(() => {
+		const steps = accidentalSteps(keySig, clef);
+		const gap = (sigGlyph.width + 0.25) * lineGap;
+		return keyLetters(keySig).map((letter, i) => ({
 			letter,
-			x: staffLeft + cl.dx + cl.w + 6 + i * sharpStep,
-			y: yForSteps(SHARP_STEPS[clef][i])
-		}))
-	);
+			x: staffLeft + cl.dx + cl.w + 6 + i * gap,
+			y: yForSteps(steps[i])
+		}));
+	});
 
 	const lowIndex = $derived(clamp(parseNoteName(low)));
 	const highIndex = $derived(clamp(parseNoteName(high)));
@@ -171,7 +174,7 @@
 			{#each keyAccidentals as a (a.letter)}
 				<path
 					class="accidental"
-					d={sharpGlyph.path}
+					d={sigGlyph.path}
 					transform="translate({a.x} {a.y}) scale({lineGap})"
 				/>
 			{/each}
