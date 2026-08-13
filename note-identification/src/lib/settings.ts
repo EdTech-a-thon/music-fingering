@@ -232,6 +232,54 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 	};
 }
 
+/**
+ * Read settings out of parsed JSON, for a file someone has imported. Every
+ * field is funnelled through the same checks a shareable link goes through, so
+ * a file that is out of date, hand-edited or simply not ours cannot produce a
+ * broken activity — anything unrecognised falls back to the default.
+ */
+export function settingsFromJson(raw: unknown): Settings {
+	// A file may hold the settings on their own or wrapped alongside a name.
+	const outer = (raw ?? {}) as Record<string, unknown>;
+	const o = (
+		outer.settings && typeof outer.settings === 'object' ? outer.settings : outer
+	) as Record<string, unknown>;
+
+	const p = new URLSearchParams();
+	const put = (key: string, value: unknown) => {
+		if (value === undefined || value === null) return;
+		p.set(key, Array.isArray(value) ? value.join(',') : String(value));
+	};
+	const putBool = (key: string, value: unknown) => {
+		if (typeof value === 'boolean') p.set(key, value ? '1' : '0');
+	};
+
+	put('clefs', o.clefs);
+	put('low', o.rangeLow);
+	put('high', o.rangeHigh);
+	put('pos', o.positions);
+	put('values', o.noteValues);
+	putBool('help', o.helpers);
+	put('inst', o.instrument);
+	put('key', o.key);
+	putBool('askstr', o.askString);
+	putBool('askfin', o.askFinger);
+	put('sys', o.positionSystem);
+	put('bpos', o.bassPositions);
+	put('fing', o.fingers);
+	put('qlim', o.questionLimit);
+	put('tsec', o.timeLimitSec);
+
+	// A range from an older file may name notes this instrument cannot reach.
+	return clampRange(settingsFromParams(p));
+}
+
+/** The name an imported file carried, if it had one. */
+export function nameFromJson(raw: unknown): string {
+	const outer = (raw ?? {}) as Record<string, unknown>;
+	return typeof outer.name === 'string' ? outer.name.trim() : '';
+}
+
 function csv(v: string | null): string[] {
 	return (v ?? '').split(',').filter(Boolean);
 }

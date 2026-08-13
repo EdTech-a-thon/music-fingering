@@ -17,9 +17,21 @@
 		fingeringOptions,
 		MAX_QUESTIONS,
 		MAX_SECONDS,
+		nameFromJson,
+		settingsFromJson,
 		settingsToQuery,
 		type Settings
 	} from '$lib/settings';
+	import {
+		fromQuery,
+		loadPresets,
+		loadWorking,
+		newId,
+		sameSettings,
+		savePresets,
+		saveWorking,
+		type Preset
+	} from '$lib/presets';
 	import {
 		ALL_INSTRUMENTS,
 		ALL_POSITION_SYSTEMS,
@@ -128,8 +140,139 @@
 	}
 	// Shareable link (absolute once we know the site address).
 	let origin = $state('');
-	onMount(() => (origin = window.location.origin));
 	const link = $derived(`${origin}/challenge?${settingsToQuery(settings)}`);
+
+	// ---------------------------------------------------------------------------
+	// Saved activities
+	// ---------------------------------------------------------------------------
+
+	let presets = $state<Preset[]>([]);
+	let activeId = $state<string | null>(null);
+	// Nothing is written back until the stored state has been read, or the first
+	// render would overwrite the teacher's work with the defaults.
+	let loaded = $state(false);
+
+	const activePreset = $derived(presets.find((p) => p.id === activeId) ?? null);
+	// Changes worth a Save: either edits on top of a saved activity, or an
+	// activity that has never been saved at all.
+	const unsaved = $derived(!activePreset || !sameSettings(settings, fromQuery(activePreset.query)));
+	const canDiscard = $derived(!!activePreset && unsaved);
+
+	onMount(() => {
+		origin = window.location.origin;
+		presets = loadPresets();
+		const working = loadWorking();
+		if (working) {
+			settings = fromQuery(working.query);
+			activeId = presets.some((p) => p.id === working.presetId) ? working.presetId : null;
+		}
+		loaded = true;
+	});
+
+	// Remember whatever is on screen, so a refresh picks up where it left off.
+	// Reading the settings through the encoder is what makes this run on *any*
+	// edit rather than only when the settings object is replaced wholesale.
+	$effect(() => {
+		const query = settingsToQuery(settings);
+		if (!loaded) return;
+		saveWorking({ query, presetId: activeId });
+	});
+
+	let naming = $state(false);
+	let draftName = $state('');
+	let confirmingDiscard = $state(false);
+	let confirmingDelete = $state<string | null>(null);
+	let presetNote = $state('');
+
+	function startSave() {
+		presetNote = '';
+		confirmingDiscard = false;
+		// Saving over an activity that already has a name needs no prompt.
+		if (activePreset) {
+			presets = presets.map((p) =>
+				p.id === activePreset.id ? { ...p, query: settingsToQuery(settings) } : p
+			);
+			savePresets(presets);
+			flash(`Saved “${activePreset.name}”`);
+			return;
+		}
+		draftName = '';
+		naming = true;
+	}
+
+	function confirmSaveAs() {
+		const name = draftName.trim();
+		if (!name) return;
+		const preset: Preset = { id: newId(), name, query: settingsToQuery(settings) };
+		presets = [...presets, preset];
+		savePresets(presets);
+		activeId = preset.id;
+		naming = false;
+		flash(`Saved “${name}”`);
+	}
+
+	function loadPreset(id: string) {
+		const preset = presets.find((p) => p.id === id);
+		if (!preset) return;
+		settings = fromQuery(preset.query);
+		activeId = preset.id;
+		confirmingDiscard = false;
+		presetNote = '';
+	}
+
+	function discardChanges() {
+		if (!activePreset) return;
+		settings = fromQuery(activePreset.query);
+		confirmingDiscard = false;
+		flash('Changes discarded');
+	}
+
+	function deletePreset(id: string) {
+		presets = presets.filter((p) => p.id !== id);
+		savePresets(presets);
+		if (activeId === id) activeId = null;
+		confirmingDelete = null;
+	}
+
+	let noteTimer: ReturnType<typeof setTimeout>;
+	function flash(message: string) {
+		presetNote = message;
+		clearTimeout(noteTimer);
+		noteTimer = setTimeout(() => (presetNote = ''), 2000);
+	}
+
+	// --- moving an activity between machines, as a plain JSON file ---
+
+	function exportSettings() {
+		const name = activePreset?.name ?? 'Untitled activity';
+		const file = JSON.stringify({ name, settings }, null, 2);
+		const url = URL.createObjectURL(new Blob([file], { type: 'application/json' }));
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${name.replace(/[^\w-]+/g, '-').toLowerCase()}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	let fileInput: HTMLInputElement;
+
+	async function importSettings(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = ''; // so picking the same file twice still fires
+		if (!file) return;
+		try {
+			const raw = JSON.parse(await file.text());
+			settings = settingsFromJson(raw);
+			// An imported activity is not yet one of the saved ones.
+			activeId = null;
+			const name = nameFromJson(raw);
+			draftName = name;
+			flash(name ? `Imported “${name}”` : 'Imported settings');
+		} catch {
+			flash('That file could not be read');
+		}
+	}
 
 	// Icon outlines, drawn on a 24×24 grid and stroked by the .icon rule below.
 	const COPY = 'M8 8h11v11H8z M5 16V5h11';
@@ -137,6 +280,8 @@
 	const DOWNLOAD = 'M12 4v10 M8 10l4 4 4-4 M5 19h14';
 	const EYE = 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z M12 9.5a2.5 2.5 0 100 5';
 	const EYE_OFF = `${EYE} M4 4l16 16`;
+	const UPLOAD = 'M12 14V4 M8 8l4-4 4 4 M5 19h14';
+	const TRASH = 'M4 7h16 M9 7V5h6v2 M6 7l1 12h10l1-12';
 
 	let copied = $state(false);
 	async function copyLink() {
@@ -453,79 +598,207 @@
 
 		<!-- Rides alongside the settings and follows the teacher down the page, so
 		     the link is in reach whatever they are in the middle of changing. -->
-		<aside class="sharebar">
-			<p class="sharetitle">Share with students</p>
-
-			<!-- The link is the button: clicking it opens the challenge, and the
-			     icon beside it copies the address instead. -->
-			<div class="linkrow">
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
-				<a class="linktext" href={link} target="_blank" rel="noopener" title={link}>{link}</a>
-				<button
-					type="button"
-					class="iconbtn"
-					onclick={copyLink}
-					aria-label="Copy link"
-					title={copied ? 'Copied' : 'Copy link'}
-				>
-					{@render icon(copied ? CHECK : COPY)}
-				</button>
-			</div>
-
-			{#if qr}
-				<!-- The code itself stays out of the way until the eye is pressed;
-				     saving and copying do not need it on screen. -->
-				<div class="qrrow">
-					<span class="qrlabel">QR code</span>
+		<div class="side">
+			<!-- Saving, discarding and moving an activity between machines. Sits above
+			     the share card because it is about the activity itself. -->
+			<aside class="activity">
+				<div class="actionrow">
 					<button
 						type="button"
-						class="iconbtn"
-						onclick={() => (qrOpen = !qrOpen)}
-						aria-expanded={qrOpen}
-						aria-label={qrOpen ? 'Hide the QR code' : 'Show the QR code'}
-						title={qrOpen ? 'Hide' : 'Show'}
+						class="btn-save"
+						class:pending={unsaved}
+						onclick={startSave}
+						title={activePreset
+							? `Save changes to “${activePreset.name}”`
+							: 'Save this as an activity'}
 					>
-						{@render icon(qrOpen ? EYE_OFF : EYE)}
+						{activePreset ? 'Save' : 'Save as…'}
 					</button>
 					<button
 						type="button"
+						class="btn-ghost"
+						disabled={!canDiscard}
+						onclick={() => (confirmingDiscard = true)}
+						title="Go back to the last saved version"
+					>
+						Discard
+					</button>
+					<span class="spacer"></span>
+					<button
+						type="button"
 						class="iconbtn"
-						onclick={saveQr}
-						aria-label="Save QR code"
-						title="Save QR code"
+						onclick={exportSettings}
+						aria-label="Export activity as a file"
+						title="Export as JSON"
 					>
 						{@render icon(DOWNLOAD)}
 					</button>
 					<button
 						type="button"
 						class="iconbtn"
-						onclick={copyQr}
-						aria-label="Copy QR code"
-						title={qrCopied ? 'Copied' : 'Copy QR code'}
+						onclick={() => fileInput.click()}
+						aria-label="Import an activity file"
+						title="Import JSON"
 					>
-						{@render icon(qrCopied ? CHECK : COPY)}
+						{@render icon(UPLOAD)}
+					</button>
+					<input
+						bind:this={fileInput}
+						class="hidden-file"
+						type="file"
+						accept="application/json,.json"
+						onchange={importSettings}
+					/>
+				</div>
+
+				<p class="activityname">
+					{activePreset ? activePreset.name : 'Unsaved activity'}
+					{#if unsaved}<span class="pendingtag">unsaved changes</span>{/if}
+				</p>
+
+				{#if naming}
+					<div class="namerow">
+						<!-- svelte-ignore a11y_autofocus -->
+						<input
+							class="nameinput"
+							placeholder="Name this activity"
+							bind:value={draftName}
+							autofocus
+							onkeydown={(e) => {
+								if (e.key === 'Enter') confirmSaveAs();
+								if (e.key === 'Escape') naming = false;
+							}}
+						/>
+						<button type="button" class="btn-save pending" onclick={confirmSaveAs}>Save</button>
+						<button type="button" class="btn-ghost" onclick={() => (naming = false)}>Cancel</button>
+					</div>
+				{/if}
+
+				{#if confirmingDiscard}
+					<div class="confirm">
+						<span>Throw away changes since the last save?</span>
+						<button type="button" class="btn-danger" onclick={discardChanges}>Discard</button>
+						<button type="button" class="btn-ghost" onclick={() => (confirmingDiscard = false)}>
+							Keep
+						</button>
+					</div>
+				{/if}
+
+				{#if presetNote}<p class="presetnote">{presetNote}</p>{/if}
+
+				{#if presets.length}
+					<ul class="presetlist">
+						{#each presets as preset (preset.id)}
+							<li class:on={preset.id === activeId}>
+								<button type="button" class="presetname" onclick={() => loadPreset(preset.id)}>
+									{preset.name}
+								</button>
+								{#if confirmingDelete === preset.id}
+									<button
+										type="button"
+										class="btn-danger tiny"
+										onclick={() => deletePreset(preset.id)}
+									>
+										Delete
+									</button>
+									<button
+										type="button"
+										class="btn-ghost tiny"
+										onclick={() => (confirmingDelete = null)}
+									>
+										No
+									</button>
+								{:else}
+									<button
+										type="button"
+										class="iconbtn small"
+										onclick={() => (confirmingDelete = preset.id)}
+										aria-label={`Delete ${preset.name}`}
+										title="Delete"
+									>
+										{@render icon(TRASH)}
+									</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</aside>
+
+			<aside class="sharebar">
+				<p class="sharetitle">Share with students</p>
+
+				<!-- The link is the button: clicking it opens the challenge, and the
+			     icon beside it copies the address instead. -->
+				<div class="linkrow">
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
+					<a class="linktext" href={link} target="_blank" rel="noopener" title={link}>{link}</a>
+					<button
+						type="button"
+						class="iconbtn"
+						onclick={copyLink}
+						aria-label="Copy link"
+						title={copied ? 'Copied' : 'Copy link'}
+					>
+						{@render icon(copied ? CHECK : COPY)}
 					</button>
 				</div>
 
-				{#if qrOpen}
-					<div class="qr">
-						<svg
-							viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
-							role="img"
-							aria-label="QR code for this challenge link"
+				{#if qr}
+					<!-- The code itself stays out of the way until the eye is pressed;
+				     saving and copying do not need it on screen. -->
+					<div class="qrrow">
+						<span class="qrlabel">QR code</span>
+						<button
+							type="button"
+							class="iconbtn"
+							onclick={() => (qrOpen = !qrOpen)}
+							aria-expanded={qrOpen}
+							aria-label={qrOpen ? 'Hide the QR code' : 'Show the QR code'}
+							title={qrOpen ? 'Hide' : 'Show'}
 						>
-							<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
-							<path d={qrPath(qr)} fill="#000" />
-						</svg>
+							{@render icon(qrOpen ? EYE_OFF : EYE)}
+						</button>
+						<button
+							type="button"
+							class="iconbtn"
+							onclick={saveQr}
+							aria-label="Save QR code"
+							title="Save QR code"
+						>
+							{@render icon(DOWNLOAD)}
+						</button>
+						<button
+							type="button"
+							class="iconbtn"
+							onclick={copyQr}
+							aria-label="Copy QR code"
+							title={qrCopied ? 'Copied' : 'Copy QR code'}
+						>
+							{@render icon(qrCopied ? CHECK : COPY)}
+						</button>
 					</div>
-				{/if}
-				{#if qrNote}<p class="sharenote">{qrNote}</p>{/if}
-			{/if}
 
-			<p class="sharehint">
-				Both update as you change the settings — the link and the code always match.
-			</p>
-		</aside>
+					{#if qrOpen}
+						<div class="qr">
+							<svg
+								viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
+								role="img"
+								aria-label="QR code for this challenge link"
+							>
+								<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
+								<path d={qrPath(qr)} fill="#000" />
+							</svg>
+						</div>
+					{/if}
+					{#if qrNote}<p class="sharenote">{qrNote}</p>{/if}
+				{/if}
+
+				<p class="sharehint">
+					Both update as you change the settings — the link and the code always match.
+				</p>
+			</aside>
+		</div>
 	</div>
 </div>
 
@@ -548,10 +821,142 @@
 		.layout {
 			grid-template-columns: minmax(0, 1fr) 19rem;
 		}
-		.sharebar {
+		.side {
 			position: sticky;
 			top: 1.5rem;
 		}
+	}
+	.side {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	.activity {
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.9rem 1rem;
+	}
+	.actionrow {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.actionrow :global(.btn-save),
+	.actionrow :global(.btn-ghost) {
+		padding: 0.45rem 0.85rem;
+		font-size: 0.88rem;
+		white-space: nowrap;
+	}
+	.spacer {
+		flex: 1;
+	}
+	.hidden-file {
+		display: none;
+	}
+	.activityname {
+		margin-top: 0.6rem;
+		font-size: 0.9rem;
+		font-weight: 700;
+	}
+	.pendingtag {
+		margin-left: 0.4rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		background: var(--amber);
+		border: 1px solid var(--amber-border);
+		color: #7a4100;
+		font-size: 0.72rem;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+	.namerow,
+	.confirm {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.6rem;
+	}
+	.confirm span {
+		flex: 1 1 100%;
+		font-size: 0.85rem;
+	}
+	.namerow :global(button),
+	.confirm :global(button) {
+		padding: 0.4rem 0.75rem;
+		font-size: 0.85rem;
+	}
+	.nameinput {
+		flex: 1 1 100%;
+		min-width: 0;
+		padding: 0.45rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: #fff;
+		font-size: 0.9rem;
+	}
+	.presetnote {
+		margin-top: 0.5rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--blue-dark);
+	}
+	.presetlist {
+		margin-top: 0.7rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.5rem;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.presetlist li {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		border-radius: 8px;
+		padding: 0.1rem;
+	}
+	.presetlist li.on {
+		background: var(--blue-soft);
+	}
+	.presetname {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+		padding: 0.35rem 0.5rem;
+		border: none;
+		background: none;
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: #333;
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.presetname:hover {
+		color: var(--blue);
+	}
+	.presetlist li.on .presetname {
+		color: var(--blue-dark);
+	}
+	.iconbtn.small {
+		width: 1.9rem;
+		height: 1.9rem;
+		border-color: transparent;
+		background: none;
+		color: #8a8f98;
+	}
+	.iconbtn.small:hover {
+		color: #b3261e;
+		border-color: #f3c9c6;
+		background: #fff;
+	}
+	:global(.tiny) {
+		padding: 0.25rem 0.5rem !important;
+		font-size: 0.78rem !important;
 	}
 	.intro h1 {
 		font-size: 1.9rem;
