@@ -135,6 +135,8 @@
 	const COPY = 'M8 8h11v11H8z M5 16V5h11';
 	const CHECK = 'M4 12l5 5L20 6';
 	const DOWNLOAD = 'M12 4v10 M8 10l4 4 4-4 M5 19h14';
+	const EYE = 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z M12 9.5a2.5 2.5 0 100 5';
+	const EYE_OFF = `${EYE} M4 4l16 16`;
 
 	let copied = $state(false);
 	async function copyLink() {
@@ -147,8 +149,8 @@
 	// known, so the code is never one that points at the wrong place.
 	const qr = $derived(origin ? makeQr(link) : null);
 
-	// Shown small until asked for: full size it is the tallest thing in the card,
-	// and most of the time the teacher only wants the link.
+	// Hidden until asked for: shown it is the tallest thing in the card, and most
+	// of the time the teacher only wants the link.
 	let qrOpen = $state(false);
 	let qrCopied = $state(false);
 	let qrNote = $state('');
@@ -471,15 +473,42 @@
 			</div>
 
 			{#if qr}
-				<div class="qrblock" class:open={qrOpen}>
+				<!-- The code itself stays out of the way until the eye is pressed;
+				     saving and copying do not need it on screen. -->
+				<div class="qrrow">
+					<span class="qrlabel">QR code</span>
 					<button
 						type="button"
-						class="qr"
+						class="iconbtn"
 						onclick={() => (qrOpen = !qrOpen)}
 						aria-expanded={qrOpen}
-						aria-label={qrOpen ? 'Shrink the QR code' : 'Enlarge the QR code'}
-						title={qrOpen ? 'Shrink' : 'Enlarge'}
+						aria-label={qrOpen ? 'Hide the QR code' : 'Show the QR code'}
+						title={qrOpen ? 'Hide' : 'Show'}
 					>
+						{@render icon(qrOpen ? EYE_OFF : EYE)}
+					</button>
+					<button
+						type="button"
+						class="iconbtn"
+						onclick={saveQr}
+						aria-label="Save QR code"
+						title="Save QR code"
+					>
+						{@render icon(DOWNLOAD)}
+					</button>
+					<button
+						type="button"
+						class="iconbtn"
+						onclick={copyQr}
+						aria-label="Copy QR code"
+						title={qrCopied ? 'Copied' : 'Copy QR code'}
+					>
+						{@render icon(qrCopied ? CHECK : COPY)}
+					</button>
+				</div>
+
+				{#if qrOpen}
+					<div class="qr">
 						<svg
 							viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
 							role="img"
@@ -488,28 +517,8 @@
 							<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
 							<path d={qrPath(qr)} fill="#000" />
 						</svg>
-					</button>
-					<div class="qractions">
-						<button
-							type="button"
-							class="iconbtn"
-							onclick={copyQr}
-							aria-label="Copy QR code"
-							title={qrCopied ? 'Copied' : 'Copy QR code'}
-						>
-							{@render icon(qrCopied ? CHECK : COPY)}
-						</button>
-						<button
-							type="button"
-							class="iconbtn"
-							onclick={saveQr}
-							aria-label="Save QR code"
-							title="Save QR code"
-						>
-							{@render icon(DOWNLOAD)}
-						</button>
 					</div>
-				</div>
+				{/if}
 				{#if qrNote}<p class="sharenote">{qrNote}</p>{/if}
 			{/if}
 
@@ -745,34 +754,29 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
-	/* Closed, the code is a thumbnail beside its buttons; open, it takes the
-	   card's full width with the buttons tucked underneath. */
-	.qrblock {
+	/* One line: what it is, then show / save / copy. */
+	.qrrow {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		margin-top: 0.6rem;
+		gap: 0.4rem;
+		margin-top: 0.5rem;
 	}
-	.qrblock.open {
-		flex-direction: column;
-		align-items: stretch;
+	.qrlabel {
+		flex: 1;
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--blue-dark);
+	}
+	.qrrow .iconbtn {
+		height: 2.25rem;
 	}
 	.qr {
-		flex: none;
-		width: 4.5rem;
-		padding: 0.25rem;
+		margin-top: 0.5rem;
+		padding: 0.4rem;
 		/* A QR needs light quiet space around it to scan, and the card is tinted. */
 		background: #fff;
 		border: 1px solid var(--blue-border);
 		border-radius: 8px;
-		cursor: pointer;
-	}
-	.qr:hover {
-		border-color: var(--blue);
-	}
-	.qrblock.open .qr {
-		width: 100%;
-		padding: 0.4rem;
 	}
 	.qr svg {
 		display: block;
@@ -780,16 +784,6 @@
 		height: auto;
 		/* Keep the modules hard-edged rather than smoothed when scaled. */
 		shape-rendering: crispEdges;
-	}
-	.qractions {
-		display: flex;
-		gap: 0.4rem;
-	}
-	.qrblock.open .qractions {
-		justify-content: flex-end;
-	}
-	.qractions .iconbtn {
-		height: 2.25rem;
 	}
 	.sharehint {
 		margin-top: 0.6rem;
