@@ -2,15 +2,21 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Exercise from '$lib/Exercise.svelte';
-	import { settingsFromParams } from '$lib/settings';
+	import { asksFingering, settingsFromParams } from '$lib/settings';
+	import { INSTRUMENT_NAMES } from '$lib/strings';
 
 	// Read the challenge settings straight from the link's query string.
 	const settings = $derived(settingsFromParams(page.url.searchParams));
+	const title = $derived(
+		asksFingering(settings)
+			? `${INSTRUMENT_NAMES[settings.instrument]} — Notes & Fingering`
+			: `${INSTRUMENT_NAMES[settings.instrument]} — Name the Note`
+	);
 </script>
 
 <div class="challenge">
 	<header>
-		<h1>Name the Note</h1>
+		<h1>{title}</h1>
 		<a class="back" href={resolve('/')}>← Change settings</a>
 	</header>
 

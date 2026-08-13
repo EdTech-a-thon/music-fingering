@@ -1,41 +1,111 @@
 <script lang="ts">
+	// Picks the lowest and highest note of the practice range, shown on an
+	// ordinary five-line staff with a few ledger lines' worth of room either side.
 	import ClefGlyph from './Clef.svelte';
+	import { ACCIDENTALS, ENGRAVING, NOTEHEADS } from './glyphs';
 	import {
 		BOTTOM_LINE,
-		diatonicIndex,
+		KEY_SHARPS,
+		SHARP_STEPS,
+		RANGE_MARGIN,
 		noteName,
 		parseNoteName,
-		type Clef as ClefType
+		stepsAboveBottom,
+		type Clef as ClefType,
+		type KeyId
 	} from './music';
 
 	let {
 		clef,
+		keySig = 'C',
 		low,
 		high,
+		minNote,
+		maxNote,
 		onchange
-	}: { clef: ClefType; low: string; high: string; onchange: (low: string, high: string) => void } =
-		$props();
+	}: {
+		clef: ClefType;
+		keySig?: KeyId;
+		low: string;
+		high: string;
+		/** Hard limits, used to keep an instrument inside what it can finger. */
+		minNote?: string;
+		maxNote?: string;
+		onchange: (low: string, high: string) => void;
+	} = $props();
 
-	const minIndex = diatonicIndex('C', 2);
-	const maxIndex = diatonicIndex('C', 7);
-	const step = 9;
-	const staffLeft = 28;
-	const staffRight = 202;
-	const top = 18;
-	const height = top * 2 + (maxIndex - minIndex) * step;
-	const yFor = (index: number) => top + (maxIndex - index) * step;
-	const lowIndex = $derived(parseNoteName(low));
-	const highIndex = $derived(parseNoteName(high));
-	const staffLineIndices = $derived.by(() => {
-		const bottom = BOTTOM_LINE[clef];
-		const lines: number[] = [];
-		for (let index = bottom; index <= maxIndex; index += 2) lines.push(index);
-		for (let index = bottom - 2; index >= minIndex; index -= 2) lines.push(index);
-		return lines;
-	});
+	// Staff geometry, matching the exercise staff so the two look alike.
+	const lineGap = 14;
+	const halfStep = lineGap / 2;
+	const pad = 20; // enough that the treble clef's tail is not clipped
+	const topLineY = pad + RANGE_MARGIN * halfStep;
+	const bottomLineY = topLineY + 4 * lineGap;
+	const height = bottomLineY + RANGE_MARGIN * halfStep + pad;
+	const width = 230;
+	const staffLeft = 10;
+	const staffRight = width - 10;
+	const lineYs = [0, 1, 2, 3, 4].map((i) => topLineY + i * lineGap);
+
+	// Clef placement, copied from the exercise staff (same line spacing). The C
+	// clef's width must keep its viewBox's 18:25 ratio so it spans four gaps.
+	const cClefH = 4 * lineGap;
+	const cClefW = (cClefH * 18) / 25;
+	const clefLayout: Record<ClefType, { dx: number; y: number; w: number; h: number }> = {
+		treble: { dx: -2, y: topLineY - 18, w: 36, h: 108 },
+		bass: { dx: 4, y: topLineY - 2, w: 30, h: 48 },
+		alto: { dx: 2, y: topLineY, w: cClefW, h: cClefH },
+		tenor: { dx: 2, y: topLineY - lineGap, w: cClefW, h: cClefH }
+	};
+	const cl = $derived(clefLayout[clef]);
+
+	// The range may run from three ledger lines below the staff to three above,
+	// and no further than the instrument (if any) can reach.
+	const minIndex = $derived(
+		Math.max(BOTTOM_LINE[clef] - RANGE_MARGIN, minNote ? parseNoteName(minNote) : -Infinity)
+	);
+	const maxIndex = $derived(
+		Math.min(BOTTOM_LINE[clef] + 8 + RANGE_MARGIN, maxNote ? parseNoteName(maxNote) : Infinity)
+	);
+	const yForSteps = (steps: number) => bottomLineY - steps * halfStep;
+	const yFor = (index: number) => yForSteps(stepsAboveBottom(clef, index));
+
+	// The key signature, so the teacher picks a range against the staff the
+	// student will actually read.
+	const sharpGlyph = ACCIDENTALS.sharp;
+	const sharpStep = (sharpGlyph.width + 0.25) * lineGap;
+	const keyAccidentals = $derived(
+		KEY_SHARPS[keySig].map((letter, i) => ({
+			letter,
+			x: staffLeft + cl.dx + cl.w + 6 + i * sharpStep,
+			y: yForSteps(SHARP_STEPS[clef][i])
+		}))
+	);
+
+	const lowIndex = $derived(clamp(parseNoteName(low)));
+	const highIndex = $derived(clamp(parseNoteName(high)));
+	const lowX = 140;
+	const highX = 180;
+
+	function clamp(index: number): number {
+		return Math.max(minIndex, Math.min(maxIndex, index));
+	}
+
+	// The markers are drawn as Bravura noteheads, like the exercise staff.
+	const head = NOTEHEADS.black;
+	const headWidth = head.width * lineGap;
+	const ledgerHalf = headWidth / 2 + ENGRAVING.legerLineExtension * lineGap;
+
+	// Ledger lines for a note sitting outside the five lines.
+	function ledgers(index: number): number[] {
+		const steps = stepsAboveBottom(clef, index);
+		const ys: number[] = [];
+		if (steps >= 10) for (let s = 10; s <= steps; s += 2) ys.push(yForSteps(s));
+		if (steps <= -2) for (let s = -2; s >= steps; s -= 2) ys.push(yForSteps(s));
+		return ys;
+	}
 
 	function setNote(endpoint: 'low' | 'high', index: number) {
-		const next = Math.max(minIndex, Math.min(maxIndex, index));
+		const next = clamp(index);
 		if (endpoint === 'low') onchange(noteName(Math.min(next, highIndex)), high);
 		else onchange(low, noteName(Math.max(next, lowIndex)));
 	}
@@ -49,70 +119,88 @@
 		if (event.type === 'pointerdown') target.setPointerCapture(event.pointerId);
 		const svg = target.ownerSVGElement;
 		if (!svg) return;
+		// Map the pointer back into viewBox units, then to the nearest step.
 		const rect = svg.getBoundingClientRect();
-		const index = Math.round(
-			maxIndex - ((event.clientY - rect.top) / rect.height) * (maxIndex - minIndex)
-		);
-		setNote(endpoint, index);
+		const y = ((event.clientY - rect.top) / rect.height) * height;
+		const steps = Math.round((bottomLineY - y) / halfStep);
+		setNote(endpoint, BOTTOM_LINE[clef] + steps);
 	}
 </script>
 
 <div class="range-selector">
 	<div class="range-controls">
-		<div class="endpoint low">
-			<span class="endpoint-name">Start note</span>
-			<button type="button" aria-label="Raise start note" onclick={() => move('low', 1)}>↑</button>
-			<output>{low}</output>
-			<button type="button" aria-label="Lower start note" onclick={() => move('low', -1)}>↓</button>
+		<div class="endpoint">
+			<span class="endpoint-name">Lowest note</span>
+			<button type="button" aria-label="Raise lowest note" onclick={() => move('low', 1)}>↑</button>
+			<output>{noteName(lowIndex)}</output>
+			<button type="button" aria-label="Lower lowest note" onclick={() => move('low', -1)}>↓</button
+			>
 		</div>
-		<div class="endpoint high">
-			<span class="endpoint-name">End note</span>
-			<button type="button" aria-label="Raise end note" onclick={() => move('high', 1)}>↑</button>
-			<output>{high}</output>
-			<button type="button" aria-label="Lower end note" onclick={() => move('high', -1)}>↓</button>
+		<div class="endpoint">
+			<span class="endpoint-name">Highest note</span>
+			<button type="button" aria-label="Raise highest note" onclick={() => move('high', 1)}
+				>↑</button
+			>
+			<output>{noteName(highIndex)}</output>
+			<button type="button" aria-label="Lower highest note" onclick={() => move('high', -1)}
+				>↓</button
+			>
 		</div>
 	</div>
 
-	<p class="instruction">Drag either colored note up or down on the staff, or use its arrows.</p>
-	<div class="sheet" style:height={`${height}px`}>
+	<p class="instruction">Drag either note up or down on the staff, or use its arrows.</p>
+	<div class="sheet">
 		<svg
-			viewBox={`0 0 230 ${height}`}
+			viewBox={`0 0 ${width} ${height}`}
 			role="img"
-			aria-label={`${clef} clef range from ${low} to ${high}`}
+			aria-label={`${clef} clef range from ${noteName(lowIndex)} to ${noteName(highIndex)}`}
 		>
-			{#each staffLineIndices as index (index)}
-				<line x1={staffLeft} y1={yFor(index)} x2={staffRight} y2={yFor(index)} class="staff-line" />
+			{#each lineYs as y (y)}
+				<line
+					x1={staffLeft}
+					y1={y}
+					x2={staffRight}
+					y2={y}
+					class="stroke"
+					stroke-width={ENGRAVING.staffLineThickness * lineGap}
+				/>
 			{/each}
-			<ClefGlyph {clef} x={32} y={yFor(BOTTOM_LINE[clef] + 4) - 28} width={25} height={56} />
 
-			<g class="note low-note" transform={`translate(132 ${yFor(lowIndex)})`}>
-				<ellipse rx="9" ry="6" transform="rotate(-20)" />
-				<text x="17" y="4">Start</text>
-				<rect
-					x="-16"
-					y="-14"
-					width="32"
-					height="28"
-					fill="transparent"
-					role="presentation"
-					onpointerdown={(e) => drag('low', e)}
-					onpointermove={(e) => e.buttons === 1 && drag('low', e)}
+			<ClefGlyph {clef} x={staffLeft + cl.dx} y={cl.y} width={cl.w} height={cl.h} />
+
+			{#each keyAccidentals as a (a.letter)}
+				<path
+					class="accidental"
+					d={sharpGlyph.path}
+					transform="translate({a.x} {a.y}) scale({lineGap})"
 				/>
-			</g>
-			<g class="note high-note" transform={`translate(172 ${yFor(highIndex)})`}>
-				<ellipse rx="9" ry="6" transform="rotate(-20)" />
-				<text x="17" y="4">End</text>
-				<rect
-					x="-16"
-					y="-14"
-					width="32"
-					height="28"
-					fill="transparent"
-					role="presentation"
-					onpointerdown={(e) => drag('high', e)}
-					onpointermove={(e) => e.buttons === 1 && drag('high', e)}
-				/>
-			</g>
+			{/each}
+
+			{#each [{ x: lowX, index: lowIndex, end: 'low' as const }, { x: highX, index: highIndex, end: 'high' as const }] as note (note.end)}
+				<g class="note" transform={`translate(${note.x} ${yFor(note.index)})`}>
+					{#each ledgers(note.index) as y (y)}
+						<line
+							x1={-ledgerHalf}
+							y1={y - yFor(note.index)}
+							x2={ledgerHalf}
+							y2={y - yFor(note.index)}
+							class="stroke"
+							stroke-width={ENGRAVING.legerLineThickness * lineGap}
+						/>
+					{/each}
+					<path d={head.path} transform="translate({-headWidth / 2} 0) scale({lineGap})" />
+					<rect
+						x="-16"
+						y="-14"
+						width="32"
+						height="28"
+						fill="transparent"
+						role="presentation"
+						onpointerdown={(e) => drag(note.end, e)}
+						onpointermove={(e) => e.buttons === 1 && drag(note.end, e)}
+					/>
+				</g>
+			{/each}
 		</svg>
 	</div>
 </div>
@@ -152,20 +240,12 @@
 		text-align: center;
 		font-weight: 800;
 	}
-	.low output {
-		color: #b45309;
-	}
-	.high output {
-		color: #2563eb;
-	}
 	.instruction {
 		margin: 0 0 0.55rem;
 		color: #555;
 		font-size: 0.82rem;
 	}
 	.sheet {
-		max-height: 22rem;
-		overflow-y: auto;
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		background: #fff;
@@ -173,29 +253,19 @@
 	.sheet svg {
 		display: block;
 		width: 100%;
-		min-width: 15rem;
+		color: #1a1a1a;
 	}
-	.staff-line {
-		stroke: #c9ccd3;
-		stroke-width: 1;
+	.stroke {
+		stroke: currentColor;
+	}
+	.accidental {
+		fill: currentColor;
 	}
 	.note {
 		cursor: ns-resize;
 		touch-action: none;
 	}
-	.note ellipse {
+	.note path {
 		fill: currentColor;
-	}
-	.note text {
-		fill: currentColor;
-		font:
-			700 10px system-ui,
-			sans-serif;
-	}
-	.low-note {
-		color: #b45309;
-	}
-	.high-note {
-		color: #2563eb;
 	}
 </style>

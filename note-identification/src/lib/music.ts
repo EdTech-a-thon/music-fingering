@@ -2,14 +2,12 @@
 // Plain data + pure functions so the logic is easy to read and test.
 
 export type Clef = 'treble' | 'bass' | 'alto' | 'tenor';
-export type Accidental = 'natural' | 'sharp' | 'flat';
 export type Position = 'both' | 'lines' | 'spaces';
 export type NoteValue = 'whole' | 'half' | 'quarter';
 
 export interface Note {
 	letter: string; // 'A'..'G'
 	octave: number; // scientific pitch octave, 4 = the octave of middle C
-	explicit: Accidental | null; // an accidental printed beside this note, if any
 	value: NoteValue; // whole / half / quarter (visual only)
 }
 
@@ -22,6 +20,53 @@ export const CLEF_NAMES: Record<Clef, string> = {
 	alto: 'Alto',
 	tenor: 'Tenor'
 };
+
+// ---------------------------------------------------------------------------
+// Key signatures
+// ---------------------------------------------------------------------------
+
+// The sharp keys a beginning string player meets first. A key signature never
+// changes a note's letter or where it sits on the staff — it raises the pitch,
+// which is why it changes the fingering and not the answer to "name this note".
+export type KeyId = 'C' | 'G' | 'D';
+
+export const ALL_KEYS: KeyId[] = ['C', 'G', 'D'];
+
+export const KEY_NAMES: Record<KeyId, string> = {
+	C: 'C major',
+	G: 'G major',
+	D: 'D major'
+};
+
+/** Letters the key sharpens, in the order the sharps are written on the staff. */
+export const KEY_SHARPS: Record<KeyId, string[]> = {
+	C: [],
+	G: ['F'],
+	D: ['F', 'C']
+};
+
+/**
+ * Where each sharp of a key signature is written, as steps above the bottom
+ * line of the staff, in the order they are written. Engraving convention rather
+ * than arithmetic: the sharps stay inside the staff, so each clef spells the
+ * same two sharps in its own place.
+ */
+export const SHARP_STEPS: Record<Clef, number[]> = {
+	treble: [8, 5], // F5 top line, C5 third space
+	bass: [6, 3], // F3 fourth line, C3 second space
+	alto: [7, 4], // F4 top space, C4 middle line
+	tenor: [2, 6] // F3 second line, C4 fourth line
+};
+
+/** Half steps the key signature adds to a letter: 1 for a sharp, 0 otherwise. */
+export function alteration(key: KeyId, letter: string): number {
+	return KEY_SHARPS[key].includes(letter) ? 1 : 0;
+}
+
+/** "F♯" in a key that sharpens F, plain "F" otherwise. */
+export function noteLabel(key: KeyId, letter: string): string {
+	return alteration(key, letter) ? `${letter}♯` : letter;
+}
 
 // ---------------------------------------------------------------------------
 // Staff positions
@@ -46,6 +91,27 @@ export function parseNoteName(name: string): number {
 	return diatonicIndex(m[1], Number(m[2]));
 }
 
+// Where each natural sits within its octave, in half steps. String fingering
+// depends on the *sounding* distance from the open string, not the staff step,
+// so the fingering tables need this alongside the diatonic index.
+const SEMITONES: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+export function chromaticPitch(letter: string, octave: number): number {
+	return octave * 12 + SEMITONES[letter];
+}
+
+// The half-step pitch of a diatonic staff position, as written in C major.
+export function pitchOfIndex(index: number): number {
+	const { letter, octave } = fromDiatonicIndex(index);
+	return chromaticPitch(letter, octave);
+}
+
+/** What the note actually sounds in this key — the pitch the fingering plays. */
+export function pitchInKey(index: number, key: KeyId): number {
+	const { letter, octave } = fromDiatonicIndex(index);
+	return chromaticPitch(letter, octave) + alteration(key, letter);
+}
+
 export function noteName(index: number): string {
 	const { letter, octave } = fromDiatonicIndex(index);
 	return `${letter}${octave}`;
@@ -64,6 +130,15 @@ export function stepsAboveBottom(clef: Clef, index: number): number {
 	return index - BOTTOM_LINE[clef];
 }
 
+// How far past the staff a range may reach: three ledger lines either side.
+export const RANGE_MARGIN = 6;
+
+// Where a clef's range starts out: the staff plus two ledger lines either side.
+export function defaultRange(clef: Clef): { low: string; high: string } {
+	const bottom = BOTTOM_LINE[clef];
+	return { low: noteName(bottom - 4), high: noteName(bottom + 12) };
+}
+
 // Even step = sits on a line; odd step = sits in a space.
 function matchesPosition(step: number, position: Position): boolean {
 	if (position === 'lines') return step % 2 === 0;
@@ -72,45 +147,8 @@ function matchesPosition(step: number, position: Position): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Key signatures
-// ---------------------------------------------------------------------------
-// A key signature is an integer: 0 = none, +n = n sharps, -n = n flats.
-
-const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
-const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
-
-export function keySignatureName(keySig: number): string {
-	if (keySig === 0) return 'No key signature';
-	const n = Math.abs(keySig);
-	const kind = keySig > 0 ? 'sharp' : 'flat';
-	return `${n} ${kind}${n > 1 ? 's' : ''}`;
-}
-
-// The letters that carry a sharp or flat in this key signature, in order.
-export function keySignatureLetters(keySig: number): string[] {
-	if (keySig === 0) return [];
-	const order = keySig > 0 ? SHARP_ORDER : FLAT_ORDER;
-	return order.slice(0, Math.abs(keySig));
-}
-
-// The accidental a bare note picks up from the key signature alone.
-export function impliedAccidental(letter: string, keySig: number): Accidental {
-	if (keySig > 0 && SHARP_ORDER.slice(0, keySig).includes(letter)) return 'sharp';
-	if (keySig < 0 && FLAT_ORDER.slice(0, -keySig).includes(letter)) return 'flat';
-	return 'natural';
-}
-
-// The accidental that actually sounds: an explicit one wins, otherwise the key.
-export function effectiveAccidental(note: Note, keySig: number): Accidental {
-	return note.explicit ?? impliedAccidental(note.letter, keySig);
-}
-
-// ---------------------------------------------------------------------------
 // Generating a question
 // ---------------------------------------------------------------------------
-
-const SHARP_LETTERS = new Set(['C', 'D', 'F', 'G', 'A']); // avoid E#/B#
-const FLAT_LETTERS = new Set(['D', 'E', 'G', 'A', 'B']); // avoid Cb/Fb
 
 function pick<T>(items: T[]): T {
 	return items[Math.floor(Math.random() * items.length)];
@@ -121,53 +159,38 @@ export interface GenerateOptions {
 	lowIndex: number;
 	highIndex: number;
 	position: Position;
-	accidentals: boolean;
 	values: NoteValue[];
+	/**
+	 * Notes the student has a way to answer. Restricting the fingerings on offer
+	 * can leave gaps inside the range — a note nobody can finger is not a
+	 * question worth asking.
+	 */
+	playable?: (index: number) => boolean;
 }
 
-// Build one random note that satisfies the given settings. The key signature is
-// not needed here — it only affects the correct answer, applied later.
+// Build one random note that satisfies the given settings. Accidentals are never
+// written in: the key signature carries them, so a note is always a plain letter.
 export function randomNote(opts: GenerateOptions): Note {
-	const { clef, lowIndex, highIndex, position, accidentals, values } = opts;
+	const { clef, lowIndex, highIndex, position, values, playable } = opts;
 
-	// All diatonic positions in range that match the line/space filter.
+	// All diatonic positions in range that match the line/space filter. Asking
+	// only for, say, notes on lines can rule out everything the student can
+	// finger, and a note nobody can play is the worse question of the two — so
+	// the line/space filter is what gives way.
 	const candidates: number[] = [];
+	const fallbacks: number[] = [];
 	for (let i = lowIndex; i <= highIndex; i++) {
+		if (playable && !playable(i)) continue;
+		fallbacks.push(i);
 		if (matchesPosition(stepsAboveBottom(clef, i), position)) candidates.push(i);
 	}
-	const index = candidates.length ? pick(candidates) : lowIndex;
+	const index = candidates.length
+		? pick(candidates)
+		: fallbacks.length
+			? pick(fallbacks)
+			: lowIndex;
 	const { letter, octave } = fromDiatonicIndex(index);
 
-	// An explicit accidental only appears when Accidentals is on, and only some
-	// of the time so plenty of plain notes still show up.
-	let explicit: Accidental | null = null;
-	if (accidentals && Math.random() < 0.5) {
-		const choices: Accidental[] = ['natural'];
-		if (SHARP_LETTERS.has(letter)) choices.push('sharp');
-		if (FLAT_LETTERS.has(letter)) choices.push('flat');
-		explicit = pick(choices);
-	}
-
 	const value = values.length ? pick(values) : 'whole';
-	return { letter, octave, explicit, value };
-}
-
-// ---------------------------------------------------------------------------
-// Naming (Letters only, for now)
-// ---------------------------------------------------------------------------
-
-const ACCIDENTAL_SYMBOL: Record<Accidental, string> = {
-	natural: '',
-	sharp: '♯',
-	flat: '♭'
-};
-
-// A short, stable id used to compare a chosen answer with the correct note.
-export function answerId(letter: string, accidental: Accidental): string {
-	return letter + (accidental === 'sharp' ? '#' : accidental === 'flat' ? 'b' : '');
-}
-
-// The human-readable name shown on a button or as feedback, e.g. "F♯".
-export function answerLabel(letter: string, accidental: Accidental): string {
-	return letter + ACCIDENTAL_SYMBOL[accidental];
+	return { letter, octave, value };
 }
