@@ -38,6 +38,7 @@
 		type PositionId,
 		type PositionSystem
 	} from '$lib/strings';
+	import { makeQr, qrExtent, qrPath, qrPng } from '$lib/qr';
 	import RangeSelector from '$lib/RangeSelector.svelte';
 	import Staff from '$lib/Staff.svelte';
 
@@ -135,6 +136,39 @@
 		await navigator.clipboard.writeText(link);
 		copied = true;
 		setTimeout(() => (copied = false), 1500);
+	}
+
+	// The same link as something a class can scan. Held back until the address is
+	// known, so the code is never one that points at the wrong place.
+	const qr = $derived(origin ? makeQr(link) : null);
+
+	let qrCopied = $state(false);
+	let qrNote = $state('');
+
+	async function copyQr() {
+		if (!qr) return;
+		qrNote = '';
+		try {
+			const png = await qrPng(qr);
+			await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+			qrCopied = true;
+			setTimeout(() => (qrCopied = false), 1500);
+		} catch {
+			// Not every browser will put an image on the clipboard. Say so rather
+			// than failing quietly — Save always works.
+			qrNote = 'This browser will not copy images. Use Save instead.';
+		}
+	}
+
+	async function saveQr() {
+		if (!qr) return;
+		qrNote = '';
+		const url = URL.createObjectURL(await qrPng(qr));
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${settings.instrument}-practice-qr.png`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -402,26 +436,70 @@
 				</div>
 			</fieldset>
 		</section>
-	</div>
 
-	<section class="sharebar">
-		<label for="share">Share this challenge with students</label>
-		<div class="sharerow">
-			<input id="share" class="link" readonly value={link} />
-			<button type="button" class="btn-primary" onclick={copyLink}
-				>{copied ? 'Copied!' : 'Copy link'}</button
-			>
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
-			<a class="btn-dark" href={link} target="_blank" rel="noopener">Open ↗</a>
-		</div>
-	</section>
+		<!-- Rides alongside the settings and follows the teacher down the page, so
+		     the link is in reach whatever they are in the middle of changing. -->
+		<aside class="sharebar">
+			<label for="share">Share this challenge with students</label>
+			<div class="sharerow">
+				<input id="share" class="link" readonly value={link} />
+				<button type="button" class="btn-primary" onclick={copyLink}
+					>{copied ? 'Copied!' : 'Copy link'}</button
+				>
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
+				<a class="btn-dark" href={link} target="_blank" rel="noopener">Open ↗</a>
+			</div>
+
+			{#if qr}
+				<div class="qr">
+					<svg
+						viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
+						role="img"
+						aria-label="QR code for this challenge link"
+					>
+						<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
+						<path d={qrPath(qr)} fill="#000" />
+					</svg>
+				</div>
+				<div class="sharerow">
+					<button type="button" class="btn-primary" onclick={copyQr}
+						>{qrCopied ? 'Copied!' : 'Copy QR'}</button
+					>
+					<button type="button" class="btn-dark" onclick={saveQr}>Save</button>
+				</div>
+				{#if qrNote}<p class="sharenote">{qrNote}</p>{/if}
+			{/if}
+
+			<p class="sharehint">
+				Both update as you change the settings — the link and the code always match.
+			</p>
+		</aside>
+	</div>
 </div>
 
 <style>
 	.page {
-		max-width: 40rem;
+		max-width: 64rem;
 		margin: 0 auto;
 		padding: 1.5rem 1.25rem 3rem;
+	}
+	.layout {
+		display: grid;
+		gap: 1.5rem;
+		align-items: start;
+	}
+	/* Wide enough for two columns: settings keep their old width and the share
+	   card takes the rest, sticking to the top as the page scrolls. Narrower
+	   than this it drops back under the settings, where a side column would
+	   only squeeze both. */
+	@media (min-width: 60rem) {
+		.layout {
+			grid-template-columns: minmax(0, 1fr) 19rem;
+		}
+		.sharebar {
+			position: sticky;
+			top: 1.5rem;
+		}
 	}
 	.intro h1 {
 		font-size: 1.9rem;
@@ -567,7 +645,6 @@
 		font-size: 0.92rem;
 	}
 	.sharebar {
-		margin-top: 1.5rem;
 		background: var(--blue-soft);
 		border: 1px solid var(--blue-border);
 		border-radius: var(--radius);
@@ -578,19 +655,53 @@
 		font-weight: 700;
 		margin-bottom: 0.5rem;
 	}
+	/* The link takes a row of its own and the buttons share the next, so the
+	   card reads the same in the side column as it does full width. */
 	.sharerow {
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
 	}
 	.link {
-		flex: 1;
-		min-width: 12rem;
+		flex: 1 1 100%;
+		min-width: 0;
 		padding: 0.55rem 0.75rem;
 		border: 1px solid var(--blue-border);
 		border-radius: 8px;
 		background: #fff;
 		font-size: 0.9rem;
 		color: #333;
+	}
+	.sharerow :global(.btn-primary),
+	.sharerow :global(.btn-dark) {
+		flex: 1 1 auto;
+		text-align: center;
+	}
+	/* White plate behind the code: a QR needs light quiet space around it to
+	   scan, and the card's own background is tinted. */
+	.qr {
+		margin: 0.6rem 0;
+		background: #fff;
+		border: 1px solid var(--blue-border);
+		border-radius: 8px;
+		padding: 0.4rem;
+	}
+	.qr svg {
+		display: block;
+		width: 100%;
+		height: auto;
+		/* Keep the modules square-edged rather than blurred when scaled. */
+		image-rendering: pixelated;
+	}
+	.sharehint {
+		margin-top: 0.6rem;
+		font-size: 0.82rem;
+		color: var(--blue-dark);
+	}
+	.sharenote {
+		margin-top: 0.5rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: #842029;
 	}
 </style>
