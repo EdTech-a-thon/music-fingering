@@ -131,6 +131,11 @@
 	onMount(() => (origin = window.location.origin));
 	const link = $derived(`${origin}/challenge?${settingsToQuery(settings)}`);
 
+	// Icon outlines, drawn on a 24×24 grid and stroked by the .icon rule below.
+	const COPY = 'M8 8h11v11H8z M5 16V5h11';
+	const CHECK = 'M4 12l5 5L20 6';
+	const DOWNLOAD = 'M12 4v10 M8 10l4 4 4-4 M5 19h14';
+
 	let copied = $state(false);
 	async function copyLink() {
 		await navigator.clipboard.writeText(link);
@@ -142,6 +147,9 @@
 	// known, so the code is never one that points at the wrong place.
 	const qr = $derived(origin ? makeQr(link) : null);
 
+	// Shown small until asked for: full size it is the tallest thing in the card,
+	// and most of the time the teacher only wants the link.
+	let qrOpen = $state(false);
 	let qrCopied = $state(false);
 	let qrNote = $state('');
 
@@ -171,6 +179,10 @@
 		URL.revokeObjectURL(url);
 	}
 </script>
+
+{#snippet icon(d: string)}
+	<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path {d} /></svg>
+{/snippet}
 
 <div class="page">
 	<header class="intro">
@@ -440,32 +452,63 @@
 		<!-- Rides alongside the settings and follows the teacher down the page, so
 		     the link is in reach whatever they are in the middle of changing. -->
 		<aside class="sharebar">
-			<label for="share">Share this challenge with students</label>
-			<div class="sharerow">
-				<input id="share" class="link" readonly value={link} />
-				<button type="button" class="btn-primary" onclick={copyLink}
-					>{copied ? 'Copied!' : 'Copy link'}</button
-				>
+			<p class="sharetitle">Share this challenge with students</p>
+
+			<!-- The link is the button: clicking it opens the challenge, and the
+			     icon beside it copies the address instead. -->
+			<div class="linkrow">
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
-				<a class="btn-dark" href={link} target="_blank" rel="noopener">Open ↗</a>
+				<a class="linktext" href={link} target="_blank" rel="noopener" title={link}>{link}</a>
+				<button
+					type="button"
+					class="iconbtn"
+					onclick={copyLink}
+					aria-label="Copy link"
+					title={copied ? 'Copied' : 'Copy link'}
+				>
+					{@render icon(copied ? CHECK : COPY)}
+				</button>
 			</div>
 
 			{#if qr}
-				<div class="qr">
-					<svg
-						viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
-						role="img"
-						aria-label="QR code for this challenge link"
+				<div class="qrblock" class:open={qrOpen}>
+					<button
+						type="button"
+						class="qr"
+						onclick={() => (qrOpen = !qrOpen)}
+						aria-expanded={qrOpen}
+						aria-label={qrOpen ? 'Shrink the QR code' : 'Enlarge the QR code'}
+						title={qrOpen ? 'Shrink' : 'Enlarge'}
 					>
-						<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
-						<path d={qrPath(qr)} fill="#000" />
-					</svg>
-				</div>
-				<div class="sharerow">
-					<button type="button" class="btn-primary" onclick={copyQr}
-						>{qrCopied ? 'Copied!' : 'Copy QR'}</button
-					>
-					<button type="button" class="btn-dark" onclick={saveQr}>Save</button>
+						<svg
+							viewBox="0 0 {qrExtent(qr)} {qrExtent(qr)}"
+							role="img"
+							aria-label="QR code for this challenge link"
+						>
+							<rect width={qrExtent(qr)} height={qrExtent(qr)} fill="#fff" />
+							<path d={qrPath(qr)} fill="#000" />
+						</svg>
+					</button>
+					<div class="qractions">
+						<button
+							type="button"
+							class="iconbtn"
+							onclick={copyQr}
+							aria-label="Copy QR code"
+							title={qrCopied ? 'Copied' : 'Copy QR code'}
+						>
+							{@render icon(qrCopied ? CHECK : COPY)}
+						</button>
+						<button
+							type="button"
+							class="iconbtn"
+							onclick={saveQr}
+							aria-label="Save QR code"
+							title="Save QR code"
+						>
+							{@render icon(DOWNLOAD)}
+						</button>
+					</div>
 				</div>
 				{#if qrNote}<p class="sharenote">{qrNote}</p>{/if}
 			{/if}
@@ -650,48 +693,103 @@
 		border-radius: var(--radius);
 		padding: 1rem 1.25rem;
 	}
-	.sharebar label {
-		display: block;
+	.sharetitle {
 		font-weight: 700;
 		margin-bottom: 0.5rem;
 	}
-	/* The link takes a row of its own and the buttons share the next, so the
-	   card reads the same in the side column as it does full width. */
-	.sharerow {
+	/* Link and its copy button on one line, the address itself taking whatever
+	   room is left and trailing off rather than wrapping the card wider. */
+	.linkrow {
 		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
+		align-items: stretch;
+		gap: 0.4rem;
 	}
-	.link {
-		flex: 1 1 100%;
+	.linktext {
+		flex: 1;
 		min-width: 0;
-		padding: 0.55rem 0.75rem;
+		padding: 0.5rem 0.7rem;
 		border: 1px solid var(--blue-border);
 		border-radius: 8px;
 		background: #fff;
-		font-size: 0.9rem;
-		color: #333;
+		font-size: 0.85rem;
+		color: var(--blue-dark);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
-	.sharerow :global(.btn-primary),
-	.sharerow :global(.btn-dark) {
-		flex: 1 1 auto;
-		text-align: center;
+	.linktext:hover {
+		border-color: var(--blue);
+		text-decoration: underline;
 	}
-	/* White plate behind the code: a QR needs light quiet space around it to
-	   scan, and the card's own background is tinted. */
+	.iconbtn {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 2.25rem;
+		border: 1px solid var(--blue-border);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--blue-dark);
+		cursor: pointer;
+	}
+	.iconbtn:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.icon {
+		width: 1.1rem;
+		height: 1.1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	/* Closed, the code is a thumbnail beside its buttons; open, it takes the
+	   card's full width with the buttons tucked underneath. */
+	.qrblock {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.6rem;
+	}
+	.qrblock.open {
+		flex-direction: column;
+		align-items: stretch;
+	}
 	.qr {
-		margin: 0.6rem 0;
+		flex: none;
+		width: 4.5rem;
+		padding: 0.25rem;
+		/* A QR needs light quiet space around it to scan, and the card is tinted. */
 		background: #fff;
 		border: 1px solid var(--blue-border);
 		border-radius: 8px;
+		cursor: pointer;
+	}
+	.qr:hover {
+		border-color: var(--blue);
+	}
+	.qrblock.open .qr {
+		width: 100%;
 		padding: 0.4rem;
 	}
 	.qr svg {
 		display: block;
 		width: 100%;
 		height: auto;
-		/* Keep the modules square-edged rather than blurred when scaled. */
-		image-rendering: pixelated;
+		/* Keep the modules hard-edged rather than smoothed when scaled. */
+		shape-rendering: crispEdges;
+	}
+	.qractions {
+		display: flex;
+		gap: 0.4rem;
+	}
+	.qrblock.open .qractions {
+		justify-content: flex-end;
+	}
+	.qractions .iconbtn {
+		height: 2.25rem;
 	}
 	.sharehint {
 		margin-top: 0.6rem;
