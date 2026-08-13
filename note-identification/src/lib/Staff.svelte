@@ -4,11 +4,12 @@
 	import Clef from './Clef.svelte';
 	import { ACCIDENTALS, ENGRAVING, NOTEHEADS, type Glyph } from './glyphs';
 	import {
+		accidentalSteps,
 		BOTTOM_LINE,
 		fromDiatonicIndex,
-		KEY_SHARPS,
+		keyAccidental,
+		keyLetters,
 		noteLabel,
-		SHARP_STEPS,
 		stepsAboveBottom,
 		diatonicIndex,
 		type Clef as ClefType,
@@ -70,17 +71,20 @@
 	const cl = $derived(clefLayout[clef]);
 	const clefX = $derived(staffLeft + cl.dx);
 
-	// The key signature, drawn between the clef and the note.
-	const sharpGlyph = ACCIDENTALS.sharp;
-	const sharpStep = (sharpGlyph.width + 0.25) * lineGap;
+	// The key signature, drawn between the clef and the note. A key is written
+	// with sharps or with flats, never a mix, so one glyph does the whole
+	// signature and its own width sets the spacing.
+	const sigGlyph = $derived(ACCIDENTALS[keyAccidental(keySig)]);
 	const sigLeft = $derived(clefX + cl.w + 6);
-	const keyAccidentals = $derived(
-		KEY_SHARPS[keySig].map((letter, i) => ({
+	const keyAccidentals = $derived.by(() => {
+		const steps = accidentalSteps(keySig, clef);
+		const gap = (sigGlyph.width + 0.25) * lineGap;
+		return keyLetters(keySig).map((letter, i) => ({
 			letter,
-			x: sigLeft + i * sharpStep,
-			y: yForSteps(SHARP_STEPS[clef][i])
-		}))
-	);
+			x: sigLeft + i * gap,
+			y: yForSteps(steps[i])
+		}));
+	});
 
 	// Helper labels: the letter for each position, listed up the right-hand end of
 	// the staff. Neighbours are only a half-gap apart vertically, so line and
@@ -166,7 +170,7 @@
 	<Clef {clef} x={clefX} y={cl.y} width={cl.w} height={cl.h} />
 
 	{#each keyAccidentals as a (a.letter)}
-		<path class="fill" d={sharpGlyph.path} transform="translate({a.x} {a.y}) scale({lineGap})" />
+		<path class="fill" d={sigGlyph.path} transform="translate({a.x} {a.y}) scale({lineGap})" />
 	{/each}
 
 	{#each helperItems as h (h.y)}

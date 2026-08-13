@@ -178,8 +178,9 @@
 			<fieldset>
 				<legend>Key signature</legend>
 				<p class="hint">
-					The staff carries the sharps; the student still names plain letters. What changes is the
-					fingering — in D major every F is a high 2 on the violin.
+					The staff carries the sharps or flats; the student still names plain letters. What changes
+					is the fingering — in D major every F is a high 2 on the violin, and in B♭ major the bass
+					plays E♭ in half position.
 				</p>
 				<div class="chips">
 					{#each ALL_KEYS as choice (choice)}
@@ -233,8 +234,7 @@
 								type="button"
 								class="chip"
 								class:on={settings.positionSystem === choice}
-								onclick={() => selectPositionSystem(choice)}
-								>{POSITION_SYSTEM_NAMES[choice]}</button
+								onclick={() => selectPositionSystem(choice)}>{POSITION_SYSTEM_NAMES[choice]}</button
 							>
 						{/each}
 					</div>

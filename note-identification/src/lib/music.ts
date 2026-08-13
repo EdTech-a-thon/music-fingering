@@ -25,18 +25,21 @@ export const CLEF_NAMES: Record<Clef, string> = {
 // Key signatures
 // ---------------------------------------------------------------------------
 
-// The sharp keys a beginning string player meets first. A key signature never
-// changes a note's letter or where it sits on the staff — it raises the pitch,
-// which is why it changes the fingering and not the answer to "name this note".
-export type KeyId = 'C' | 'G' | 'D' | 'A';
+// The keys a beginning string player meets first. A key signature never changes
+// a note's letter or where it sits on the staff — it shifts the pitch, which is
+// why it changes the fingering and not the answer to "name this note".
+export type KeyId = 'C' | 'G' | 'D' | 'A' | 'F' | 'Bb' | 'Eb';
 
-export const ALL_KEYS: KeyId[] = ['C', 'G', 'D', 'A'];
+export const ALL_KEYS: KeyId[] = ['C', 'G', 'D', 'A', 'F', 'Bb', 'Eb'];
 
 export const KEY_NAMES: Record<KeyId, string> = {
 	C: 'C major',
 	G: 'G major',
 	D: 'D major',
-	A: 'A major'
+	A: 'A major',
+	F: 'F major',
+	Bb: 'B♭ major',
+	Eb: 'E♭ major'
 };
 
 /** Letters the key sharpens, in the order the sharps are written on the staff. */
@@ -44,8 +47,32 @@ export const KEY_SHARPS: Record<KeyId, string[]> = {
 	C: [],
 	G: ['F'],
 	D: ['F', 'C'],
-	A: ['F', 'C', 'G']
+	A: ['F', 'C', 'G'],
+	F: [],
+	Bb: [],
+	Eb: []
 };
+
+/** Letters the key flattens, in the order the flats are written on the staff. */
+export const KEY_FLATS: Record<KeyId, string[]> = {
+	C: [],
+	G: [],
+	D: [],
+	A: [],
+	F: ['B'],
+	Bb: ['B', 'E'],
+	Eb: ['B', 'E', 'A']
+};
+
+/** Which accidental a key is written with. A key never mixes the two. */
+export function keyAccidental(key: KeyId): 'sharp' | 'flat' {
+	return KEY_FLATS[key].length ? 'flat' : 'sharp';
+}
+
+/** The letters a key alters, in written order, whichever way it alters them. */
+export function keyLetters(key: KeyId): string[] {
+	return KEY_FLATS[key].length ? KEY_FLATS[key] : KEY_SHARPS[key];
+}
 
 /**
  * Where each sharp of a key signature is written, as steps above the bottom
@@ -60,14 +87,37 @@ export const SHARP_STEPS: Record<Clef, number[]> = {
 	tenor: [2, 6, 3] // F3 second line, C4 fourth line, G3 second space
 };
 
-/** Half steps the key signature adds to a letter: 1 for a sharp, 0 otherwise. */
-export function alteration(key: KeyId, letter: string): number {
-	return KEY_SHARPS[key].includes(letter) ? 1 : 0;
+/** The same, for flats, which sit lower on the staff than the sharps do. */
+export const FLAT_STEPS: Record<Clef, number[]> = {
+	treble: [4, 7, 3], // B4 middle line, E5 fourth space, A4 second space
+	bass: [2, 5, 1], // B2 second line, E3 third space, A2 first space
+	alto: [3, 6, 2], // B3 second space, E4 fourth line, A3 second line
+	tenor: [5, 8, 4] // B3 third space, E4 top line, A3 third line
+};
+
+/** Where this key's accidentals are written, in the order they are written. */
+export function accidentalSteps(key: KeyId, clef: Clef): number[] {
+	return keyAccidental(key) === 'flat' ? FLAT_STEPS[clef] : SHARP_STEPS[clef];
 }
 
-/** "F♯" in a key that sharpens F, plain "F" otherwise. */
+/**
+ * Half steps the key signature shifts a letter by: +1 for a sharp, -1 for a
+ * flat, 0 for a letter the key leaves alone. Everything that works out a
+ * fingering goes through here, which is why flats needed no arithmetic of their
+ * own — a lowered note is just a negative shift.
+ */
+export function alteration(key: KeyId, letter: string): number {
+	if (KEY_SHARPS[key].includes(letter)) return 1;
+	if (KEY_FLATS[key].includes(letter)) return -1;
+	return 0;
+}
+
+/** "F♯" in a key that sharpens F, "B♭" in one that flattens B, else plain. */
 export function noteLabel(key: KeyId, letter: string): string {
-	return alteration(key, letter) ? `${letter}♯` : letter;
+	const shift = alteration(key, letter);
+	if (shift > 0) return `${letter}♯`;
+	if (shift < 0) return `${letter}♭`;
+	return letter;
 }
 
 // ---------------------------------------------------------------------------
