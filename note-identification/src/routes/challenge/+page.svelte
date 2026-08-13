@@ -9,8 +9,8 @@
 	const settings = $derived(settingsFromParams(page.url.searchParams));
 	const title = $derived(
 		asksFingering(settings)
-			? `${INSTRUMENT_NAMES[settings.instrument]} — Notes & Fingering`
-			: `${INSTRUMENT_NAMES[settings.instrument]} — Name the Note`
+			? `${INSTRUMENT_NAMES[settings.instrument]}: Notes & Fingering`
+			: `${INSTRUMENT_NAMES[settings.instrument]}: Name the Note`
 	);
 </script>
 

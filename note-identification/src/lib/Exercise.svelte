@@ -321,14 +321,13 @@
 			<h2>Ready to start</h2>
 			<p class="gate-sub">
 				{#if settings.questionLimit > 0 && settings.timeLimitSec > 0}
-					{settings.questionLimit} questions or {formatDuration(settings.timeLimitSec)} — whichever comes
-					first.
+					{settings.questionLimit} questions or {formatDuration(settings.timeLimitSec)}, whichever
+					comes first.
 				{:else if settings.questionLimit > 0}
 					{settings.questionLimit} question{settings.questionLimit === 1 ? '' : 's'}.
 				{:else}
 					{formatDuration(settings.timeLimitSec)}.
 				{/if}
-				The clock and score start when you press Start.
 			</p>
 			<div class="staff-wrap muted">
 				<Staff
