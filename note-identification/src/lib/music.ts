@@ -206,12 +206,11 @@ function pick<T>(items: T[]): T {
 	return items[Math.floor(Math.random() * items.length)];
 }
 
-export interface GenerateOptions {
+export interface RangeOptions {
 	clef: Clef;
 	lowIndex: number;
 	highIndex: number;
 	position: Position;
-	values: NoteValue[];
 	/**
 	 * Notes the student has a way to answer. Restricting the fingerings on offer
 	 * can leave gaps inside the range — a note nobody can finger is not a
@@ -220,15 +219,18 @@ export interface GenerateOptions {
 	playable?: (index: number) => boolean;
 }
 
-// Build one random note that satisfies the given settings. Accidentals are never
-// written in: the key signature carries them, so a note is always a plain letter.
-export function randomNote(opts: GenerateOptions): Note {
-	const { clef, lowIndex, highIndex, position, values, playable } = opts;
+export interface GenerateOptions extends RangeOptions {
+	values: NoteValue[];
+}
 
-	// All diatonic positions in range that match the line/space filter. Asking
-	// only for, say, notes on lines can rule out everything the student can
-	// finger, and a note nobody can play is the worse question of the two — so
-	// the line/space filter is what gives way.
+/**
+ * Every note these settings allow, low to high — the notes a run works its way
+ * through. Asking only for, say, notes on lines can rule out everything the
+ * student can finger, and a note nobody can play is the worse question of the
+ * two, so the line/space filter is what gives way.
+ */
+export function notesToAsk(opts: RangeOptions): number[] {
+	const { clef, lowIndex, highIndex, position, playable } = opts;
 	const candidates: number[] = [];
 	const fallbacks: number[] = [];
 	for (let i = lowIndex; i <= highIndex; i++) {
@@ -236,13 +238,18 @@ export function randomNote(opts: GenerateOptions): Note {
 		fallbacks.push(i);
 		if (matchesPosition(stepsAboveBottom(clef, i), position)) candidates.push(i);
 	}
-	const index = candidates.length
-		? pick(candidates)
-		: fallbacks.length
-			? pick(fallbacks)
-			: lowIndex;
-	const { letter, octave } = fromDiatonicIndex(index);
+	if (candidates.length) return candidates;
+	return fallbacks.length ? fallbacks : [lowIndex];
+}
 
-	const value = values.length ? pick(values) : 'whole';
-	return { letter, octave, value };
+// Dress a staff position up as a question. Accidentals are never written in: the
+// key signature carries them, so a note is always a plain letter.
+export function noteAt(index: number, values: NoteValue[]): Note {
+	const { letter, octave } = fromDiatonicIndex(index);
+	return { letter, octave, value: values.length ? pick(values) : 'whole' };
+}
+
+// One note picked at random from everything the settings allow.
+export function randomNote(opts: GenerateOptions): Note {
+	return noteAt(pick(notesToAsk(opts)), opts.values);
 }

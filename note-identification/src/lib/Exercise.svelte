@@ -8,14 +8,7 @@
 	// on screen so the student sees the whole fingering come together.
 	import { onDestroy } from 'svelte';
 	import Staff from './Staff.svelte';
-	import {
-		diatonicIndex,
-		noteLabel,
-		randomNote,
-		parseNoteName,
-		type Clef,
-		type Note
-	} from './music';
+	import { noteAt, noteLabel, notesToAsk, parseNoteName, type Clef, type Note } from './music';
 	import {
 		asksFingering,
 		asksPosition,
@@ -75,23 +68,68 @@
 		ok: boolean;
 	}
 
-	function newQuestion(): { clef: Clef; note: Note; index: number } {
-		const clef = pick(settings.clefs);
-		const note = randomNote({
+	function optionsFor(index: number): Fingering[] {
+		return fingeringsFor(settings.instrument, index, fingering);
+	}
+
+	// The instrument decides the clef, so a run only ever reads in one of them.
+	const clef = $derived(settings.clefs[0]);
+
+	// Every note this activity can ask about, low to high.
+	const pool = $derived(
+		notesToAsk({
 			clef,
 			lowIndex,
 			highIndex,
 			position: settings.positions,
-			values: settings.noteValues,
 			// Restricting the fingerings can leave notes inside the range with no
 			// way to play them; don't ask about those.
 			playable: asksFingering(settings) ? (i) => optionsFor(i).length > 0 : undefined
-		});
-		return { clef, note, index: diatonicIndex(note.letter, note.octave) };
+		})
+	);
+
+	// --- what to ask next ---
+	//
+	// A run starts by sweeping the range: every note once, in a shuffled order,
+	// so the student meets the whole range instead of the same few notes. Then it
+	// comes back to the notes they missed on the way through. After that there is
+	// nothing left to be systematic about, and notes are drawn at random.
+	let sweeping = $state(true);
+	let queue = $state<number[]>([]);
+	let missed = $state<number[]>([]);
+	let missedThisNote = $state(false);
+	startSweep();
+
+	function startSweep() {
+		sweeping = true;
+		queue = shuffle(pool);
+		missed = [];
 	}
 
-	function optionsFor(index: number): Fingering[] {
-		return fingeringsFor(settings.instrument, index, fingering);
+	function nextIndex(): number {
+		if (!queue.length && sweeping && missed.length) {
+			queue = shuffle(missed);
+			missed = [];
+			sweeping = false;
+		}
+		if (queue.length) return queue.shift()!;
+		sweeping = false;
+		return pick(pool);
+	}
+
+	// Fisher–Yates: each order is as likely as any other.
+	function shuffle(items: number[]): number[] {
+		const out = [...items];
+		for (let i = out.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[out[i], out[j]] = [out[j], out[i]];
+		}
+		return out;
+	}
+
+	function newQuestion(): { clef: Clef; note: Note; index: number } {
+		const index = nextIndex();
+		return { clef, note: noteAt(index, settings.noteValues), index };
 	}
 
 	// --- run state ---
@@ -119,6 +157,7 @@
 
 	function start() {
 		clearTimeout(revealTimer);
+		startSweep();
 		correct = 0;
 		attempted = 0;
 		completed = 0;
@@ -138,6 +177,7 @@
 		wrongKeys = [];
 		given = [];
 		locked = false;
+		missedThisNote = false;
 		step = 'note';
 		current = newQuestion();
 		options = optionsFor(current.index);
@@ -176,6 +216,9 @@
 	// A question is finished (right, or wrong under single-attempt): tally it and
 	// either move on or end the run.
 	function completeQuestion() {
+		// A note the student stumbled over on the way through the range comes back
+		// once the sweep is done — whichever part of it they got wrong.
+		if (missedThisNote && sweeping) missed = [...missed, current.index];
 		completed += 1;
 		if (settings.questionLimit > 0 && completed >= settings.questionLimit) {
 			finish();
@@ -271,6 +314,7 @@
 		// student still gets asked — and still sees — every part of the answer.
 		given = [...given, { step, label: chipLabel(key), ok: false }];
 		wrongKeys = [...wrongKeys, key];
+		missedThisNote = true;
 		if (step !== 'note') {
 			const pref = preferredFingering(options);
 			if (pref) options = [pref];
