@@ -69,8 +69,10 @@ export const FINGERS: Record<FingerId, FingerChoice> = {
 	L2: { id: 'L2', label: 'L2', name: 'low 2nd finger', finger: 2 },
 	'2': { id: '2', label: '2', name: '2nd finger', finger: 2 },
 	H2: { id: 'H2', label: 'H2', name: 'high 2nd finger', finger: 2 },
+	L3: { id: 'L3', label: 'L3', name: 'low 3rd finger', finger: 3 },
 	'3': { id: '3', label: '3', name: '3rd finger', finger: 3 },
 	H3: { id: 'H3', label: 'H3', name: 'high 3rd finger', finger: 3 },
+	L4: { id: 'L4', label: 'L4', name: 'low 4th finger', finger: 4 },
 	'4': { id: '4', label: '4', name: '4th finger', finger: 4 },
 	x1: { id: 'x1', label: 'x1', name: 'extended 1st finger', finger: 1, extended: true },
 	x2: { id: 'x2', label: 'x2', name: 'extended 2nd finger', finger: 2, extended: true },
@@ -79,9 +81,13 @@ export const FINGERS: Record<FingerId, FingerChoice> = {
 
 // Which fingers each instrument offers, low to high. The open string is always
 // on the list — it is not something a teacher can switch off.
+//
+// The violin's low 3 is only ever needed for A♭ on the E string, and the low 4
+// for the flats a fourth above D, A and E; the viola, tuned a fifth lower, never
+// meets a flat that asks for a low 3 in the keys taught here.
 export const FINGER_SETS: Record<Instrument, FingerId[]> = {
-	violin: ['open', 'L1', '1', 'L2', 'H2', '3', 'H3', '4'],
-	viola: ['open', 'L1', '1', 'L2', 'H2', '3', 'H3', '4'],
+	violin: ['open', 'L1', '1', 'L2', 'H2', 'L3', '3', 'H3', 'L4', '4'],
+	viola: ['open', 'L1', '1', 'L2', 'H2', '3', 'H3', 'L4', '4'],
 	cello: ['open', 'x1', '1', '2', 'x2', '3', '4', 'x4'],
 	bass: ['open', '1', '2', '4']
 };
@@ -95,16 +101,29 @@ export interface HandPosition {
 	id: PositionId;
 	label: string;
 	offsets: Offsets;
+	/**
+	 * True where each finger has a letter of its own: on the violin and viola the
+	 * 1st finger plays the letter above the open string, the 2nd the letter above
+	 * that, and so on, whatever accidental the key puts on it. That is what tells
+	 * B♭ on the E string (a lowered 4th finger) from the same pitch spelled A♯ (a
+	 * raised 3rd) — see `fingeringsFor`.
+	 */
+	fingersByLetter?: boolean;
 }
 
 // Violin and viola share a hand shape, a whole step per finger with the low and
 // high versions a half step either side: 4 lands a perfect fifth above the open
 // string, which is the next open string up, and the reason those notes have two
 // answers.
+//
+// Low 3 and low 4 sit on the same two pitches as high 2 and high 3. They are not
+// spare names for them: which one a teacher writes depends on how the note is
+// spelled, and `fingersByLetter` is what settles it.
 const UPPER_FIRST: HandPosition = {
 	id: 'I',
 	label: 'I',
-	offsets: { L1: 1, '1': 2, L2: 3, H2: 4, '3': 5, H3: 6, '4': 7 }
+	offsets: { L1: 1, '1': 2, L2: 3, H2: 4, L3: 4, '3': 5, H3: 6, L4: 6, '4': 7 },
+	fingersByLetter: true
 };
 
 // The cello hand is narrower — the fingers sit a half step apart, so closed
@@ -293,18 +312,26 @@ export function fingeringsFor(
 	const found: Fingering[] = [];
 
 	def.strings.forEach((open, string) => {
+		const openIndex = parseNoteName(open);
 		// Open strings are tuned to a fixed pitch, key signature or not.
-		const delta = pitch - pitchOfIndex(parseNoteName(open));
+		const delta = pitch - pitchOfIndex(openIndex);
 		if (delta === 0) {
 			if (opts.fingers.includes('open')) found.push({ string, finger: 'open', position: null });
 			return;
 		}
 		if (delta < 0) return;
 
+		// How many letters up the staff the note is from the open string: 4 for B
+		// on the E string, whether it is written B or B♭.
+		const letters = noteIndex - openIndex;
+
 		for (const pos of def.positions) {
 			if (def.usesPositions && !opts.positions.includes(pos.id)) continue;
-			for (const [finger, offset] of Object.entries(pos.offsets)) {
-				if (offset !== delta || !opts.fingers.includes(finger)) continue;
+			let reach = Object.keys(pos.offsets).filter(
+				(finger) => pos.offsets[finger] === delta && opts.fingers.includes(finger)
+			);
+			if (pos.fingersByLetter) reach = spelledFingers(reach, letters);
+			for (const finger of reach) {
 				found.push({
 					string,
 					finger,
@@ -315,6 +342,20 @@ export function fingeringsFor(
 	});
 
 	return found;
+}
+
+/**
+ * Of the fingers that land on the pitch, the ones named for the letter the note
+ * is written on: B♭ on the E string is the 4th finger lowered, not the 3rd
+ * raised, even though both play the same pitch.
+ *
+ * If none of them is — G♯ on the G string is a lowered 1st finger although it
+ * carries the open string's own letter — then the nearest finger is the answer,
+ * whatever it is called.
+ */
+function spelledFingers(fingers: FingerId[], letters: number): FingerId[] {
+	const spelled = fingers.filter((f) => FINGERS[f].finger === letters);
+	return spelled.length ? spelled : fingers;
 }
 
 const POSITION_ORDER: PositionId[] = BASS_POSITIONS.map((p) => p.id);
