@@ -8,7 +8,15 @@
 	// on screen so the student sees the whole fingering come together.
 	import { onDestroy } from 'svelte';
 	import Staff from './Staff.svelte';
-	import { noteAt, noteLabel, notesToAsk, parseNoteName, type Clef, type Note } from './music';
+	import {
+		fromDiatonicIndex,
+		noteAt,
+		noteLabel,
+		notesToAsk,
+		parseNoteName,
+		type Clef,
+		type Note
+	} from './music';
 	import {
 		asksFingering,
 		asksPosition,
@@ -97,7 +105,6 @@
 	let sweeping = $state(true);
 	let queue = $state<number[]>([]);
 	let missed = $state<number[]>([]);
-	let missedThisNote = $state(false);
 	startSweep();
 
 	function startSweep() {
@@ -140,6 +147,9 @@
 	let options = $state<Fingering[]>(optionsFor(current.index));
 	let given = $state<Given[]>([]);
 	let wrongKeys = $state<string[]>([]);
+	// Which steps of this question have been answered wrongly: 'note' if the
+	// letter was missed, 'finger' if the finger was, and so on.
+	let wrongSteps = $state<StepId[]>([]);
 	let locked = $state(false);
 	let correct = $state(0);
 	let attempted = $state(0);
@@ -147,6 +157,16 @@
 	let startTime = Date.now();
 	let elapsedMs = $state(0);
 	let isHighScore = $state(false);
+
+	/** How one note fared over the run, for the report at the end. */
+	interface NoteTally {
+		asked: number;
+		/** Questions with at least one wrong answer in them. */
+		wrong: number;
+		/** Wrong answers by what was being asked at the time. */
+		steps: Partial<Record<StepId, number>>;
+	}
+	let tally = $state<Record<number, NoteTally>>({});
 
 	let ticker: ReturnType<typeof setInterval> | undefined;
 	let revealTimer: ReturnType<typeof setTimeout> | undefined;
@@ -161,6 +181,7 @@
 		correct = 0;
 		attempted = 0;
 		completed = 0;
+		tally = {};
 		isHighScore = false;
 		nextQuestion();
 		startTime = Date.now();
@@ -177,7 +198,7 @@
 		wrongKeys = [];
 		given = [];
 		locked = false;
-		missedThisNote = false;
+		wrongSteps = [];
 		step = 'note';
 		current = newQuestion();
 		options = optionsFor(current.index);
@@ -216,15 +237,24 @@
 	// A question is finished (right, or wrong under single-attempt): tally it and
 	// either move on or end the run.
 	function completeQuestion() {
+		recordNote();
 		// A note the student stumbled over on the way through the range comes back
 		// once the sweep is done — whichever part of it they got wrong.
-		if (missedThisNote && sweeping) missed = [...missed, current.index];
+		if (wrongSteps.length && sweeping) missed = [...missed, current.index];
 		completed += 1;
 		if (settings.questionLimit > 0 && completed >= settings.questionLimit) {
 			finish();
 		} else {
 			nextQuestion();
 		}
+	}
+
+	// Add the question just finished to the note's running record.
+	function recordNote() {
+		const note = (tally[current.index] ??= { asked: 0, wrong: 0, steps: {} });
+		note.asked += 1;
+		if (wrongSteps.length) note.wrong += 1;
+		for (const s of wrongSteps) note.steps[s] = (note.steps[s] ?? 0) + 1;
 	}
 
 	// The buttons for the step being asked.
@@ -314,7 +344,7 @@
 		// student still gets asked — and still sees — every part of the answer.
 		given = [...given, { step, label: chipLabel(key), ok: false }];
 		wrongKeys = [...wrongKeys, key];
-		missedThisNote = true;
+		wrongSteps = [...wrongSteps, step];
 		if (step !== 'note') {
 			const pref = preferredFingering(options);
 			if (pref) options = [pref];
@@ -330,6 +360,43 @@
 		locked = true;
 		phase = 'done';
 		recordHighScore();
+	}
+
+	// --- the report at the end ---
+
+	// The steps in the order they are asked, so a note's wrong answers read in
+	// the order the student met them.
+	const ORDERED_STEPS: StepId[] = ['note', 'string', 'position', 'finger'];
+
+	const STEP_NAMES: Record<StepId, string> = {
+		note: 'note name',
+		string: 'string',
+		position: 'position',
+		finger: 'finger'
+	};
+
+	/**
+	 * The notes that went wrong, the ones missed most often first. This is the
+	 * part a teacher reads: not how much a student is struggling, but with what.
+	 */
+	const report = $derived(
+		Object.entries(tally)
+			.map(([index, note]) => ({ index: Number(index), ...note }))
+			.filter((note) => note.wrong > 0)
+			.sort((a, b) => b.wrong - a.wrong || a.index - b.index)
+	);
+
+	/** "A♭5" — the note as this key writes it, with the octave to place it. */
+	function noteTitle(index: number): string {
+		const { letter, octave } = fromDiatonicIndex(index);
+		return `${noteLabel(settings.key, letter)}${octave}`;
+	}
+
+	/** "finger ×2, string" — which parts of a note the student got wrong. */
+	function wrongParts(steps: Partial<Record<StepId, number>>): string {
+		return ORDERED_STEPS.filter((s) => steps[s])
+			.map((s) => (steps[s] === 1 ? STEP_NAMES[s] : `${STEP_NAMES[s]} ×${steps[s]}`))
+			.join(', ');
 	}
 
 	function recordHighScore() {
@@ -457,6 +524,28 @@
 			<h2 class:high={isHighScore}>{isHighScore ? 'New High Score!' : 'Challenge complete'}</h2>
 			<p class="bigscore">{correct}/{attempted}</p>
 			<p class="detail">{percent}% correct · {formatTime(elapsedMs)}</p>
+
+			{#if settings.detailedReport}
+				<!-- What the student struggled with, note by note, for the teacher to
+				     read over their shoulder at the end. -->
+				<section class="report">
+					<h3>Notes missed</h3>
+					{#if report.length}
+						<ul class="misses">
+							{#each report as note (note.index)}
+								<li>
+									<span class="note">{noteTitle(note.index)}</span>
+									<span class="count">missed {note.wrong} of {note.asked}</span>
+									<span class="parts">{wrongParts(note.steps)}</span>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="clean">Nothing missed — every answer was right.</p>
+					{/if}
+				</section>
+			{/if}
+
 			<div class="result-actions">
 				<button type="button" class="btn-primary" onclick={start}>Start Challenge</button>
 			</div>
@@ -607,6 +696,47 @@
 	.detail {
 		color: #555;
 		margin-bottom: 1.25rem;
+	}
+	/* The report reads as a list of notes rather than more score: quieter than
+	   the total above it, and left-aligned so the note names line up. */
+	.report {
+		text-align: left;
+		border-top: 1px solid var(--border);
+		padding-top: 1rem;
+		margin-bottom: 1.25rem;
+	}
+	.report h3 {
+		font-size: 0.95rem;
+		font-weight: 700;
+		margin-bottom: 0.6rem;
+	}
+	.misses {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		list-style: none;
+	}
+	.misses li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem;
+		font-size: 0.9rem;
+	}
+	.misses .note {
+		font-weight: 800;
+		min-width: 3rem;
+	}
+	.misses .count {
+		color: #b3261e;
+		font-weight: 600;
+	}
+	.misses .parts {
+		color: #555;
+	}
+	.clean {
+		color: #555;
+		font-size: 0.9rem;
 	}
 	.result-actions,
 	.practice-actions {
