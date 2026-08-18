@@ -43,6 +43,9 @@ export interface Settings {
 	// Challenge mode
 	questionLimit: number; // 0 = off, else 1..1000
 	timeLimitSec: number; // 0 = off, else 1..3600 (an hour)
+	// End the challenge with a breakdown of the notes that went wrong, so the
+	// teacher can see what a student is struggling with and not just how much.
+	detailedReport: boolean;
 }
 
 const ALL_VALUES: NoteValue[] = ['whole', 'half', 'quarter'];
@@ -76,7 +79,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	bassPositions: DEFAULT_BASS_POSITIONS,
 	fingers: [...FINGER_SETS[DEFAULT_INSTRUMENT]],
 	questionLimit: 0,
-	timeLimitSec: 0
+	timeLimitSec: 0,
+	detailedReport: false
 };
 
 function defaultFingerSettings(inst: Instrument, key: KeyId): FingeringOptions {
@@ -171,6 +175,7 @@ export function settingsToQuery(s: Settings): string {
 	p.set('fing', s.fingers.join(','));
 	p.set('qlim', String(s.questionLimit));
 	p.set('tsec', String(s.timeLimitSec));
+	p.set('rep', s.detailedReport ? '1' : '0');
 	return p.toString();
 }
 
@@ -228,7 +233,8 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 		bassPositions: bassPositions.length ? bassPositions : d.bassPositions,
 		fingers: fingers.length ? fingers : [...FINGER_SETS[instrument]],
 		questionLimit: clampLimit(params.get('qlim')),
-		timeLimitSec: readTimeLimit(params)
+		timeLimitSec: readTimeLimit(params),
+		detailedReport: bool(params.get('rep'), d.detailedReport)
 	};
 }
 
@@ -269,6 +275,7 @@ export function settingsFromJson(raw: unknown): Settings {
 	put('fing', o.fingers);
 	put('qlim', o.questionLimit);
 	put('tsec', o.timeLimitSec);
+	putBool('rep', o.detailedReport);
 
 	// A range from an older file may name notes this instrument cannot reach.
 	return clampRange(settingsFromParams(p));
