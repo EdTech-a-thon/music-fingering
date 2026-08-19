@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { resolve } from '$app/paths';
 	import Exercise from '$lib/Exercise.svelte';
 	import { asksFingering, settingsFromParams } from '$lib/settings';
 	import { INSTRUMENT_NAMES } from '$lib/strings';
@@ -17,7 +16,6 @@
 <div class="challenge">
 	<header>
 		<h1>{title}</h1>
-		<a class="back" href={resolve('/')}>← Change settings</a>
 	</header>
 
 	{#key page.url.search}
@@ -40,11 +38,5 @@
 	h1 {
 		font-size: 1.6rem;
 		font-weight: 800;
-	}
-	.back {
-		color: var(--blue);
-		text-decoration: none;
-		font-weight: 600;
-		font-size: 0.9rem;
 	}
 </style>

@@ -37,6 +37,9 @@ export interface Settings {
 	key: KeyId; // the key signature on the staff
 	askString: boolean;
 	askFinger: boolean;
+	// The bass alone has a position to ask about, and a teacher who only wants
+	// the finger named can switch that question off.
+	askPosition: boolean;
 	positionSystem: PositionSystem; // Simandl or Rabbath position names
 	bassPositions: PositionId[]; // which positions bass answers may use
 	fingers: FingerId[]; // which fingers the student may be asked for
@@ -75,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	key: 'C',
 	askString: true,
 	askFinger: true,
+	askPosition: true,
 	positionSystem: 'simandl',
 	bassPositions: DEFAULT_BASS_POSITIONS,
 	fingers: [...FINGER_SETS[DEFAULT_INSTRUMENT]],
@@ -136,9 +140,18 @@ export function asksFingering(s: Settings): boolean {
 	return s.askString || s.askFinger;
 }
 
-/** The bass is the only instrument whose position has to be asked about. */
-export function asksPosition(s: Settings): boolean {
+/**
+ * Whether bass positions are part of this activity at all. They are what puts a
+ * finger on a pitch, so they shape the fingerings — and the range — whether or
+ * not the student is asked to name them.
+ */
+export function usesPositions(s: Settings): boolean {
 	return s.instrument === 'bass' && s.askFinger;
+}
+
+/** The bass is the only instrument whose position can be asked about. */
+export function asksPosition(s: Settings): boolean {
+	return usesPositions(s) && s.askPosition;
 }
 
 // Challenge mode is "on" when either limit is active.
@@ -170,6 +183,7 @@ export function settingsToQuery(s: Settings): string {
 	p.set('key', s.key);
 	p.set('askstr', s.askString ? '1' : '0');
 	p.set('askfin', s.askFinger ? '1' : '0');
+	p.set('askpos', s.askPosition ? '1' : '0');
 	p.set('sys', s.positionSystem);
 	p.set('bpos', s.bassPositions.join(','));
 	p.set('fing', s.fingers.join(','));
@@ -229,6 +243,8 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 		key,
 		askString: bool(params.get('askstr'), d.askString),
 		askFinger: bool(params.get('askfin'), d.askFinger),
+		// Links shared before the position question could be switched off ask it.
+		askPosition: bool(params.get('askpos'), d.askPosition),
 		positionSystem,
 		bassPositions: bassPositions.length ? bassPositions : d.bassPositions,
 		fingers: fingers.length ? fingers : [...FINGER_SETS[instrument]],
@@ -270,6 +286,7 @@ export function settingsFromJson(raw: unknown): Settings {
 	put('key', o.key);
 	putBool('askstr', o.askString);
 	putBool('askfin', o.askFinger);
+	putBool('askpos', o.askPosition);
 	put('sys', o.positionSystem);
 	put('bpos', o.bassPositions);
 	put('fing', o.fingers);
