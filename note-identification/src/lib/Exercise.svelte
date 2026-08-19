@@ -5,7 +5,9 @@
 	// Each staff image is one question, which may take several steps: name the
 	// note, then which string, then — on the bass — which position, then which
 	// finger. Steps are asked one at a time, but the answers already given stay
-	// on screen so the student sees the whole fingering come together.
+	// on screen so the student sees the whole fingering come together. A wrong
+	// answer at any step ends the question there and shows what it should have
+	// been.
 	import { onDestroy } from 'svelte';
 	import Staff from './Staff.svelte';
 	import {
@@ -43,6 +45,10 @@
 	let { settings }: { settings: Settings } = $props();
 
 	const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+	// How long the right answer stays up after a miss. Short enough to keep the
+	// run moving, long enough that a student reads it rather than glimpses it.
+	const REVEAL_MS = 1800;
 
 	const challenge = $derived(isChallengeMode(settings));
 	const instrument = $derived(settings.instrument);
@@ -147,9 +153,9 @@
 	let options = $state<Fingering[]>(optionsFor(current.index));
 	let given = $state<Given[]>([]);
 	let wrongKeys = $state<string[]>([]);
-	// Which steps of this question have been answered wrongly: 'note' if the
-	// letter was missed, 'finger' if the finger was, and so on.
-	let wrongSteps = $state<StepId[]>([]);
+	// The wrong answers given to this question, each paired with the answer that
+	// would have been right — which is what the report at the end is built from.
+	let wrongAnswers = $state<Miss[]>([]);
 	let locked = $state(false);
 	let correct = $state(0);
 	let attempted = $state(0);
@@ -158,13 +164,20 @@
 	let elapsedMs = $state(0);
 	let isHighScore = $state(false);
 
+	/** One wrong answer: what was being asked, what was said, what was right. */
+	interface Miss {
+		step: StepId;
+		gave: string;
+		want: string;
+	}
+
 	/** How one note fared over the run, for the report at the end. */
 	interface NoteTally {
 		asked: number;
 		/** Questions with at least one wrong answer in them. */
 		wrong: number;
-		/** Wrong answers by what was being asked at the time. */
-		steps: Partial<Record<StepId, number>>;
+		/** The wrong answers themselves, the same slip counted once with a tally. */
+		misses: (Miss & { times: number })[];
 	}
 	let tally = $state<Record<number, NoteTally>>({});
 
@@ -198,7 +211,7 @@
 		wrongKeys = [];
 		given = [];
 		locked = false;
-		wrongSteps = [];
+		wrongAnswers = [];
 		step = 'note';
 		current = newQuestion();
 		options = optionsFor(current.index);
@@ -240,7 +253,7 @@
 		recordNote();
 		// A note the student stumbled over on the way through the range comes back
 		// once the sweep is done — whichever part of it they got wrong.
-		if (wrongSteps.length && sweeping) missed = [...missed, current.index];
+		if (wrongAnswers.length && sweeping) missed = [...missed, current.index];
 		completed += 1;
 		if (settings.questionLimit > 0 && completed >= settings.questionLimit) {
 			finish();
@@ -249,12 +262,20 @@
 		}
 	}
 
-	// Add the question just finished to the note's running record.
+	// Add the question just finished to the note's running record. The same slip
+	// made twice is one line in the report with a count, not two lines.
 	function recordNote() {
-		const note = (tally[current.index] ??= { asked: 0, wrong: 0, steps: {} });
+		const note = (tally[current.index] ??= { asked: 0, wrong: 0, misses: [] });
 		note.asked += 1;
-		if (wrongSteps.length) note.wrong += 1;
-		for (const s of wrongSteps) note.steps[s] = (note.steps[s] ?? 0) + 1;
+		if (!wrongAnswers.length) return;
+		note.wrong += 1;
+		for (const m of wrongAnswers) {
+			const same = note.misses.find(
+				(x) => x.step === m.step && x.gave === m.gave && x.want === m.want
+			);
+			if (same) same.times += 1;
+			else note.misses.push({ ...m, times: 1 });
+		}
 	}
 
 	// The buttons for the step being asked.
@@ -295,11 +316,26 @@
 			options = key === 'open' ? options.filter(isOpen) : options.filter((o) => o.position === key);
 	}
 
-	function chipLabel(key: string): string {
-		if (step === 'note') return noteLabel(settings.key, key);
-		if (step === 'string') return `${def.strings[Number(key)].replace(/\d+$/, '')} string`;
-		if (step === 'finger') return key === 'open' ? 'Open' : `Finger ${FINGERS[key].label}`;
+	function chipLabel(key: string, asked: StepId = step): string {
+		if (asked === 'note') return noteLabel(settings.key, key);
+		if (asked === 'string') return `${def.strings[Number(key)].replace(/\d+$/, '')} string`;
+		if (asked === 'finger') return key === 'open' ? 'Open' : `Finger ${FINGERS[key].label}`;
 		return key === 'open' ? 'Open' : positionName(key as PositionId, settings.positionSystem);
+	}
+
+	/**
+	 * The answer that would have been right, worded exactly as the student's own
+	 * answer is, so the report reads as one against the other. Where a note can be
+	 * played several ways this is the fingering a teacher would have written in —
+	 * the same one the reveal shows.
+	 */
+	function rightLabel(asked: StepId, from: Fingering[]): string {
+		if (asked === 'note') return chipLabel(current.note.letter, asked);
+		const f = preferredFingering(from);
+		if (!f) return '';
+		if (asked === 'string') return chipLabel(String(f.string), asked);
+		if (asked === 'finger') return chipLabel(f.finger, asked);
+		return chipLabel(f.position ?? 'open', asked);
 	}
 
 	const promptText = $derived(
@@ -339,18 +375,22 @@
 			return;
 		}
 
-		// Reveal the correct answer briefly, then move on. The rest of the question
-		// carries on from the fingering a teacher would have written in, so the
-		// student still gets asked — and still sees — every part of the answer.
+		// One wrong answer ends the question. Everything after it hangs on the part
+		// they missed — the finger only means something once the position is right
+		// — so the answer is revealed and the next note comes up instead.
 		given = [...given, { step, label: chipLabel(key), ok: false }];
 		wrongKeys = [...wrongKeys, key];
-		wrongSteps = [...wrongSteps, step];
+		wrongAnswers = [
+			...wrongAnswers,
+			{ step, gave: chipLabel(key), want: rightLabel(step, options) }
+		];
+		// The reveal reads off the fingering a teacher would have written in.
 		if (step !== 'note') {
 			const pref = preferredFingering(options);
 			if (pref) options = [pref];
 		}
 		locked = true;
-		revealTimer = setTimeout(advance, 1000);
+		revealTimer = setTimeout(completeQuestion, REVEAL_MS);
 	}
 
 	function finish() {
@@ -368,35 +408,31 @@
 	// the order the student met them.
 	const ORDERED_STEPS: StepId[] = ['note', 'string', 'position', 'finger'];
 
-	const STEP_NAMES: Record<StepId, string> = {
-		note: 'note name',
-		string: 'string',
-		position: 'position',
-		finger: 'finger'
-	};
-
 	/**
 	 * The notes that went wrong, the ones missed most often first. This is the
 	 * part a teacher reads: not how much a student is struggling, but with what.
 	 */
 	const report = $derived(
 		Object.entries(tally)
-			.map(([index, note]) => ({ index: Number(index), ...note }))
+			.map(([index, note]) => ({
+				index: Number(index),
+				...note,
+				// Read back in the order the student met them.
+				misses: [...note.misses].sort(
+					(a, b) => ORDERED_STEPS.indexOf(a.step) - ORDERED_STEPS.indexOf(b.step)
+				)
+			}))
 			.filter((note) => note.wrong > 0)
 			.sort((a, b) => b.wrong - a.wrong || a.index - b.index)
 	);
 
-	/** "A♭5" — the note as this key writes it, with the octave to place it. */
-	function noteTitle(index: number): string {
+	/**
+	 * The missed note as it was read on the staff. A picture is what the student
+	 * has to recognise — 'A4' is a name for it they have not learnt yet.
+	 */
+	function reportNote(index: number): Note {
 		const { letter, octave } = fromDiatonicIndex(index);
-		return `${noteLabel(settings.key, letter)}${octave}`;
-	}
-
-	/** "finger ×2, string" — which parts of a note the student got wrong. */
-	function wrongParts(steps: Partial<Record<StepId, number>>): string {
-		return ORDERED_STEPS.filter((s) => steps[s])
-			.map((s) => (steps[s] === 1 ? STEP_NAMES[s] : `${STEP_NAMES[s]} ×${steps[s]}`))
-			.join(', ');
+		return { letter, octave, value: 'whole' };
 	}
 
 	function recordHighScore() {
@@ -493,7 +529,7 @@
 
 		<div class="prompt">
 			{#if locked && wrongKeys.length}
-				<span class="bad">{revealText}</span>
+				<span class="bad reveal">{revealText}</span>
 			{:else}
 				<span>{promptText}</span>
 			{/if}
@@ -534,9 +570,26 @@
 						<ul class="misses">
 							{#each report as note (note.index)}
 								<li>
-									<span class="note">{noteTitle(note.index)}</span>
-									<span class="count">missed {note.wrong} of {note.asked}</span>
-									<span class="parts">{wrongParts(note.steps)}</span>
+									<!-- The note itself, drawn as it was asked. -->
+									<div class="missed-staff">
+										<Staff {clef} keySig={settings.key} note={reportNote(note.index)} />
+									</div>
+									<div class="missed-body">
+										<p class="count">Missed {note.wrong} of {note.asked}</p>
+										<ul class="diffs">
+											{#each note.misses as m, i (i)}
+												<li>
+													<span class="gave"><span class="mark">✗</span> You said {m.gave}</span>
+													{#if m.want}
+														<span class="want"><span class="mark">✓</span> It was {m.want}</span>
+													{/if}
+													{#if m.times > 1}
+														<span class="times">×{m.times}</span>
+													{/if}
+												</li>
+											{/each}
+										</ul>
+									</div>
 								</li>
 							{/each}
 						</ul>
@@ -601,8 +654,12 @@
 	}
 	.prompt {
 		text-align: center;
-		min-height: 1.6rem;
+		/* Room for the reveal below, so the buttons do not shift when it appears. */
+		min-height: 2.1rem;
 		font-size: 1.05rem;
+	}
+	.reveal {
+		font-size: 1.35rem;
 	}
 	.bad {
 		color: #b3261e;
@@ -713,25 +770,63 @@
 	.misses {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.75rem;
 		list-style: none;
 	}
-	.misses li {
+	/* Each miss is the note as a picture, with what went wrong beside it. */
+	.misses > li {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: #fff;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.5rem 0.75rem;
+	}
+	.missed-staff {
+		flex: none;
+		/* Wide enough to read the note, never so wide it crowds a phone. */
+		width: min(9rem, 40%);
+	}
+	.missed-body {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.count {
+		color: #b3261e;
+		font-weight: 700;
+		font-size: 0.85rem;
+	}
+	.diffs {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		list-style: none;
+	}
+	/* One slip per line: what was asked, what they said, what it was. */
+	.diffs li {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.5rem;
-		font-size: 0.9rem;
+		gap: 0.4rem;
+		font-size: 0.85rem;
 	}
-	.misses .note {
-		font-weight: 800;
-		min-width: 3rem;
-	}
-	.misses .count {
+	.gave {
 		color: #b3261e;
-		font-weight: 600;
 	}
-	.misses .parts {
+	.want {
+		color: #1b7f4b;
+		font-weight: 700;
+	}
+	/* The tick and cross carry the same meaning as the colours, for anyone who
+	   cannot tell the two colours apart. */
+	.mark {
+		font-weight: 700;
+	}
+	.times {
 		color: #555;
 	}
 	.clean {

@@ -11,7 +11,6 @@
 	import {
 		applyInstrument,
 		applyPositionSystem,
-		asksPosition,
 		clampRange,
 		DEFAULT_SETTINGS,
 		fingeringOptions,
@@ -20,6 +19,7 @@
 		nameFromJson,
 		settingsFromJson,
 		settingsToQuery,
+		usesPositions,
 		type Settings
 	} from '$lib/settings';
 	import {
@@ -291,15 +291,43 @@
 		if (!file) return;
 		try {
 			const raw = JSON.parse(await file.text());
-			settings = settingsFromJson(raw);
-			// An imported activity is not yet one of the saved ones.
-			activeId = null;
+			const imported = settingsFromJson(raw);
 			const name = nameFromJson(raw);
-			draftName = name;
-			flash(name ? `Imported “${name}”` : 'Imported settings');
+			settings = imported;
+			naming = false;
+			confirmingDiscard = false;
+			confirmingDelete = false;
+			if (!name) {
+				// Nothing to file it under, so it stays an unsaved activity.
+				activeId = null;
+				draftName = '';
+				flash('Imported settings');
+				return;
+			}
+			// The file names an activity, so it arrives as a saved one of its own,
+			// under the name it was exported with.
+			const preset: Preset = {
+				id: newId(),
+				name: freeName(name),
+				query: settingsToQuery(imported)
+			};
+			presets = [...presets, preset];
+			savePresets(presets);
+			activeId = preset.id;
+			flash(`Imported “${preset.name}”`);
 		} catch {
 			flash('That file could not be read');
 		}
+	}
+
+	// Two files can be exported under the same name, and importing one must not
+	// quietly take over the activity already saved as it.
+	function freeName(name: string): string {
+		const taken = (n: string) => presets.some((p) => p.name === n);
+		if (!taken(name)) return name;
+		let n = 2;
+		while (taken(`${name} (${n})`)) n++;
+		return `${name} (${n})`;
 	}
 
 	// Icon outlines, drawn on a 24×24 grid and stroked by the .icon rule below.
@@ -312,6 +340,7 @@
 	const TRASH = 'M4 7h16 M9 7V5h6v2 M6 7l1 12h10l1-12';
 	const SAVE = 'M5 5h11l3 3v11H5z M8 19v-5h8v5 M9 5v4h5V5';
 	const RESET = 'M4 9a8 8 0 1 1 .5 6 M4 4v5h5';
+	const OPEN = 'M7 17L17 7 M10 7h7v7';
 
 	let copied = $state(false);
 	async function copyLink() {
@@ -431,8 +460,13 @@
 						class:on={settings.askString}
 						onclick={() => (settings.askString = !settings.askString)}>String</button
 					>
-					{#if asksPosition(settings)}
-						<span class="chip on locked">Position</span>
+					{#if usesPositions(settings)}
+						<button
+							type="button"
+							class="chip"
+							class:on={settings.askPosition}
+							onclick={() => (settings.askPosition = !settings.askPosition)}>Position</button
+						>
 					{/if}
 					<button
 						type="button"
@@ -443,7 +477,7 @@
 				</div>
 			</fieldset>
 
-			{#if asksPosition(settings)}
+			{#if usesPositions(settings)}
 				<fieldset>
 					<legend>Position system</legend>
 					<p class="hint">Choose how bass positions are named.</p>
@@ -461,7 +495,7 @@
 
 				<fieldset>
 					<legend>Positions</legend>
-					<p class="hint">Choose which positions to include.</p>
+					<p class="hint">Choose which positions the fingerings may use.</p>
 					<div class="chips">
 						{#each SYSTEM_POSITIONS[settings.positionSystem] as id (id)}
 							<button
@@ -734,8 +768,8 @@
 			<aside class="sharebar">
 				<p class="sharetitle">Share with students</p>
 
-				<!-- The link is the button: clicking it opens the challenge, and the
-			     icon beside it copies the address instead. -->
+				<!-- The address itself, an icon that copies it, and a button that
+			     opens the activity in a new tab so the teacher keeps this one. -->
 				<div class="linkrow">
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
 					<a class="linktext" href={link} target="_blank" rel="noopener" title={link}>{link}</a>
@@ -748,6 +782,10 @@
 					>
 						{@render icon(copied ? CHECK : COPY)}
 					</button>
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- opens the shareable challenge link in a new tab -->
+					<a class="openbtn" href={link} target="_blank" rel="noopener" title="Open in a new tab">
+						Open {@render icon(OPEN)}
+					</a>
 				</div>
 
 				{#if qr}
@@ -1134,6 +1172,25 @@
 	.linktext:hover {
 		border-color: var(--blue);
 		text-decoration: underline;
+	}
+	/* The same shell as an icon button, widened to carry its label. */
+	.openbtn {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0 0.7rem;
+		border: 1px solid var(--blue-border);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--blue-dark);
+		font-size: 0.85rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.openbtn:hover {
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.iconbtn {
 		flex: none;
