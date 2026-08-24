@@ -18,8 +18,10 @@
 	<section class="panel">
 		<p>
 			Clef Coach does not collect personal information from teachers or students. There are no
-			accounts, no sign-ins, and no analytics or tracking of any kind. We do not share, sell, or
-			otherwise transfer visitor data to third parties, because we don't gather any to begin with.
+			accounts and no sign-ins. So we can tell how much the site is being used, page visits are
+			counted with Cloudflare Web Analytics, which uses no cookies, does not follow visitors from
+			site to site, and does not build a profile of anyone. We do not share, sell, or otherwise
+			transfer visitor data to third parties.
 		</p>
 		<p>
 			Clef Coach remembers your saved activity setups and the settings you were last working on in
