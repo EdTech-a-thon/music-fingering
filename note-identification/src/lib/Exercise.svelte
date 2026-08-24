@@ -50,6 +50,11 @@
 	// run moving, long enough that a student reads it rather than glimpses it.
 	const REVEAL_MS = 1800;
 
+	// How long "Correct!" stays up before the next step. A right answer needs far
+	// less time than a wrong one — there is nothing to read but the word itself —
+	// but it does need long enough to be read at all.
+	const CORRECT_MS = 700;
+
 	const challenge = $derived(isChallengeMode(settings));
 	const instrument = $derived(settings.instrument);
 	const def = $derived(INSTRUMENTS[instrument]);
@@ -371,7 +376,7 @@
 			narrow(key);
 			given = [...given, { step, label: chipLabel(key), ok: true }];
 			locked = true;
-			revealTimer = setTimeout(advance, 350);
+			revealTimer = setTimeout(advance, CORRECT_MS);
 			return;
 		}
 
@@ -527,11 +532,16 @@
 			</ol>
 		{/if}
 
+		<!-- Right and wrong are told the same way: a verdict the student can read
+		     from across the room, and — when they missed it — the answer under it. -->
 		<div class="prompt">
 			{#if locked && wrongKeys.length}
-				<span class="bad reveal">{revealText}</span>
+				<p class="bad verdict">Not quite</p>
+				<p class="bad">{revealText}</p>
+			{:else if locked}
+				<p class="good verdict">Correct!</p>
 			{:else}
-				<span>{promptText}</span>
+				<p>{promptText}</p>
 			{/if}
 		</div>
 
@@ -654,12 +664,17 @@
 	}
 	.prompt {
 		text-align: center;
-		/* Room for the reveal below, so the buttons do not shift when it appears. */
-		min-height: 2.1rem;
+		/* Room for the verdict and the answer under it, so the buttons do not shift
+		   when they appear. */
+		min-height: 3.5rem;
 		font-size: 1.05rem;
 	}
-	.reveal {
+	.verdict {
 		font-size: 1.35rem;
+	}
+	.good {
+		color: #16794a;
+		font-weight: 700;
 	}
 	.bad {
 		color: #b3261e;

@@ -47,3 +47,9 @@ bun run dev      # start the site
 bun run check    # type-check
 bun run lint     # format + lint check
 ```
+
+## Visitor counts
+
+Set `CF_BEACON_TOKEN` (see `.env.example`) to the Cloudflare Web Analytics site
+token and the beacon is added to every page. Leave it unset — as it is in local
+runs — and no analytics script is loaded at all.
