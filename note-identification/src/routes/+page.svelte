@@ -445,6 +445,10 @@
 						>
 					{/each}
 				</div>
+				<label class="switch"
+					><input type="checkbox" bind:checked={settings.accidentals} /> Accidentals — write sharps, flats
+					and naturals on some notes, on top of the key signature</label
+				>
 			</fieldset>
 
 			<fieldset>
@@ -1133,9 +1137,10 @@
 		cursor: pointer;
 		font-size: 0.92rem;
 	}
-	/* The report switch sits under the two limit boxes it belongs with, and its
-	   label runs long enough to wrap. */
-	.limits + .switch {
+	/* The report and accidentals switches sit under the choices they belong
+	   with, and their labels run long enough to wrap. */
+	.limits + .switch,
+	.chips + .switch {
 		align-items: flex-start;
 		margin-top: 0.9rem;
 	}

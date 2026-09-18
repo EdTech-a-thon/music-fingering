@@ -147,6 +147,8 @@ export const ENGRAVING = {
 	stemThickness: ${d.stemThickness},
 	legerLineThickness: ${d.legerLineThickness},
 	legerLineExtension: ${d.legerLineExtension},
+	/** Space between an accidental and the notehead it belongs to. */
+	accidentalGap: 0.25,
 	/** Conventional stem length, measured from the centre of the notehead. */
 	stemLength: 3.5
 } as const;
