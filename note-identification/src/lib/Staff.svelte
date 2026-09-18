@@ -123,6 +123,13 @@
 	const headWidth = $derived(head.width * lineGap);
 	const headLeft = $derived(noteX - headWidth / 2);
 
+	// A sign written in front of the note sits a little clear of the head, on the
+	// same line or space, and is drawn like the key signature's are.
+	const signGlyph = $derived(note?.accidental ? ACCIDENTALS[note.accidental] : null);
+	const signLeft = $derived(
+		signGlyph ? headLeft - (signGlyph.width + ENGRAVING.accidentalGap) * lineGap : 0
+	);
+
 	// Ledger lines run legerLineExtension past the head on either side.
 	const ledgers = $derived.by(() => {
 		const ys: number[] = [];
@@ -196,6 +203,14 @@
 		{/if}
 
 		<path class="fill" d={head.path} transform="translate({headLeft} {noteY}) scale({lineGap})" />
+
+		{#if signGlyph}
+			<path
+				class="fill"
+				d={signGlyph.path}
+				transform="translate({signLeft} {noteY}) scale({lineGap})"
+			/>
+		{/if}
 	{/if}
 </svg>
 

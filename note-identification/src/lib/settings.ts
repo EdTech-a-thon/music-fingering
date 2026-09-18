@@ -35,6 +35,9 @@ export interface Settings {
 	// The instrument being practised — it fixes the clef and the fingerings.
 	instrument: Instrument;
 	key: KeyId; // the key signature on the staff
+	// Write sharps, flats and naturals in front of some notes, on top of the
+	// key signature, and ask the student to name them.
+	accidentals: boolean;
 	askString: boolean;
 	askFinger: boolean;
 	// The bass alone has a position to ask about, and a teacher who only wants
@@ -76,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	helpers: false,
 	instrument: DEFAULT_INSTRUMENT,
 	key: 'C',
+	accidentals: false,
 	askString: true,
 	askFinger: true,
 	askPosition: true,
@@ -181,6 +185,7 @@ export function settingsToQuery(s: Settings): string {
 	p.set('help', s.helpers ? '1' : '0');
 	p.set('inst', s.instrument);
 	p.set('key', s.key);
+	p.set('acc', s.accidentals ? '1' : '0');
 	p.set('askstr', s.askString ? '1' : '0');
 	p.set('askfin', s.askFinger ? '1' : '0');
 	p.set('askpos', s.askPosition ? '1' : '0');
@@ -241,6 +246,7 @@ export function settingsFromParams(params: URLSearchParams): Settings {
 		helpers: bool(params.get('help'), d.helpers),
 		instrument,
 		key,
+		accidentals: bool(params.get('acc'), d.accidentals),
 		askString: bool(params.get('askstr'), d.askString),
 		askFinger: bool(params.get('askfin'), d.askFinger),
 		// Links shared before the position question could be switched off ask it.
@@ -284,6 +290,7 @@ export function settingsFromJson(raw: unknown): Settings {
 	putBool('help', o.helpers);
 	put('inst', o.instrument);
 	put('key', o.key);
+	putBool('acc', o.accidentals);
 	putBool('askstr', o.askString);
 	putBool('askfin', o.askFinger);
 	putBool('askpos', o.askPosition);

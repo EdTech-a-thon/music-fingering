@@ -11,11 +11,17 @@
 	import { onDestroy } from 'svelte';
 	import Staff from './Staff.svelte';
 	import {
+		ACCIDENTAL_NAMES,
+		ACCIDENTAL_SYMBOLS,
+		ALL_ACCIDENTALS,
 		fromDiatonicIndex,
 		noteAt,
 		noteLabel,
 		notesToAsk,
 		parseNoteName,
+		soundingAccidental,
+		writableAccidentals,
+		type Accidental,
 		type Clef,
 		type Note
 	} from './music';
@@ -80,15 +86,21 @@
 		return items[Math.floor(Math.random() * items.length)];
 	}
 
-	type StepId = 'note' | 'string' | 'finger' | 'position';
+	type StepId = 'note' | 'accidental' | 'string' | 'finger' | 'position';
 	interface Given {
 		step: StepId;
 		label: string;
 		ok: boolean;
 	}
 
-	function optionsFor(index: number): Fingering[] {
-		return fingeringsFor(settings.instrument, index, fingering);
+	function optionsFor(index: number, accidental: Accidental | null = null): Fingering[] {
+		return fingeringsFor(settings.instrument, index, fingering, accidental);
+	}
+
+	/** One question waiting to be asked: a staff position, with or without a sign. */
+	interface Ask {
+		index: number;
+		accidental: Accidental | null;
 	}
 
 	// The instrument decides the clef, so a run only ever reads in one of them.
@@ -114,17 +126,17 @@
 	// comes back to the notes they missed on the way through. After that there is
 	// nothing left to be systematic about, and notes are drawn at random.
 	let sweeping = $state(true);
-	let queue = $state<number[]>([]);
-	let missed = $state<number[]>([]);
+	let queue = $state<Ask[]>([]);
+	let missed = $state<Ask[]>([]);
 	startSweep();
 
 	function startSweep() {
 		sweeping = true;
-		queue = shuffle(pool);
+		queue = shuffle(pool).map(ask);
 		missed = [];
 	}
 
-	function nextIndex(): number {
+	function nextAsk(): Ask {
 		if (!queue.length && sweeping && missed.length) {
 			queue = shuffle(missed);
 			missed = [];
@@ -132,11 +144,25 @@
 		}
 		if (queue.length) return queue.shift()!;
 		sweeping = false;
-		return pick(pool);
+		return ask(pick(pool));
+	}
+
+	// Decide whether a note is asked plain or with a sign in front of it. About
+	// half the notes keep a sign when accidentals are on, so the student still
+	// has to read the key signature for the rest. A sign that would put the note
+	// out of reach of the fingerings being taught is not offered.
+	function ask(index: number): Ask {
+		if (!settings.accidentals) return { index, accidental: null };
+		const { letter } = fromDiatonicIndex(index);
+		const signs = writableAccidentals(settings.key, letter).filter(
+			(a) => !asksFingering(settings) || optionsFor(index, a).length > 0
+		);
+		if (!signs.length || Math.random() < 0.5) return { index, accidental: null };
+		return { index, accidental: pick(signs) };
 	}
 
 	// Fisher–Yates: each order is as likely as any other.
-	function shuffle(items: number[]): number[] {
+	function shuffle<T>(items: T[]): T[] {
 		const out = [...items];
 		for (let i = out.length - 1; i > 0; i--) {
 			const j = Math.floor(Math.random() * (i + 1));
@@ -146,8 +172,8 @@
 	}
 
 	function newQuestion(): { clef: Clef; note: Note; index: number } {
-		const index = nextIndex();
-		return { clef, note: noteAt(index, settings.noteValues), index };
+		const { index, accidental } = nextAsk();
+		return { clef, note: noteAt(index, settings.noteValues, accidental), index };
 	}
 
 	// --- run state ---
@@ -155,7 +181,9 @@
 	let current = $state(newQuestion());
 	let step = $state<StepId>('note');
 	// Every fingering still consistent with what the student has answered so far.
-	let options = $state<Fingering[]>(optionsFor(current.index));
+	let options = $state<Fingering[]>(optionsFor(current.index, current.note.accidental));
+	/** The sign in front of the note being asked, if there is one. */
+	const written = $derived(current.note.accidental ?? null);
 	let given = $state<Given[]>([]);
 	let wrongKeys = $state<string[]>([]);
 	// The wrong answers given to this question, each paired with the answer that
@@ -178,13 +206,18 @@
 
 	/** How one note fared over the run, for the report at the end. */
 	interface NoteTally {
+		/** The note as it was asked, so the report can draw it back. */
+		index: number;
+		accidental: Accidental | null;
 		asked: number;
 		/** Questions with at least one wrong answer in them. */
 		wrong: number;
 		/** The wrong answers themselves, the same slip counted once with a tally. */
 		misses: (Miss & { times: number })[];
 	}
-	let tally = $state<Record<number, NoteTally>>({});
+	// Keyed by the note *and* its sign: F and F♯ are two different things to get
+	// wrong, and the teacher wants to know which one it was.
+	let tally = $state<Record<string, NoteTally>>({});
 
 	let ticker: ReturnType<typeof setInterval> | undefined;
 	let revealTimer: ReturnType<typeof setTimeout> | undefined;
@@ -219,13 +252,16 @@
 		wrongAnswers = [];
 		step = 'note';
 		current = newQuestion();
-		options = optionsFor(current.index);
+		options = optionsFor(current.index, current.note.accidental);
 	}
 
-	// Which step follows this one. On the bass the position is asked before the
-	// finger — the position is what tells you where the finger goes.
+	// Which step follows this one. With accidentals on, the letter is followed by
+	// its sign. On the bass the position is asked before the finger — the
+	// position is what tells you where the finger goes.
 	function stepAfter(from: StepId): StepId | null {
-		if (from === 'note') return settings.askString ? 'string' : fingeringStep();
+		if (from === 'note' && settings.accidentals) return 'accidental';
+		if (from === 'note' || from === 'accidental')
+			return settings.askString ? 'string' : fingeringStep();
 		if (from === 'string') return fingeringStep();
 		// Answering "open" at the position step has already named the whole
 		// fingering, so there is no finger left to ask for.
@@ -258,7 +294,8 @@
 		recordNote();
 		// A note the student stumbled over on the way through the range comes back
 		// once the sweep is done — whichever part of it they got wrong.
-		if (wrongAnswers.length && sweeping) missed = [...missed, current.index];
+		if (wrongAnswers.length && sweeping)
+			missed = [...missed, { index: current.index, accidental: written }];
 		completed += 1;
 		if (settings.questionLimit > 0 && completed >= settings.questionLimit) {
 			finish();
@@ -270,7 +307,14 @@
 	// Add the question just finished to the note's running record. The same slip
 	// made twice is one line in the report with a count, not two lines.
 	function recordNote() {
-		const note = (tally[current.index] ??= { asked: 0, wrong: 0, misses: [] });
+		const key = written ? `${current.index}:${written}` : String(current.index);
+		const note = (tally[key] ??= {
+			index: current.index,
+			accidental: written,
+			asked: 0,
+			wrong: 0,
+			misses: []
+		});
 		note.asked += 1;
 		if (!wrongAnswers.length) return;
 		note.wrong += 1;
@@ -285,7 +329,12 @@
 
 	// The buttons for the step being asked.
 	const choices = $derived.by((): { key: string; label: string }[] => {
-		if (step === 'note') return LETTERS.map((l) => ({ key: l, label: noteLabel(settings.key, l) }));
+		if (step === 'note') return LETTERS.map((l) => ({ key: l, label: chipLabel(l) }));
+		if (step === 'accidental')
+			return ALL_ACCIDENTALS.map((a) => ({
+				key: a,
+				label: `${ACCIDENTAL_SYMBOLS[a]} ${ACCIDENTAL_NAMES[a]}`
+			}));
 		if (step === 'string')
 			return def.strings.map((s, i) => ({
 				key: String(i),
@@ -305,8 +354,13 @@
 		return options.some(isOpen) ? [{ key: 'open', label: 'Open' }, ...positions] : positions;
 	});
 
+	// The sign asked for is what the note comes out as, key signature included:
+	// F in D major is sharp whether or not a sharp is written in front of it.
+	const sounding = $derived(soundingAccidental(settings.key, current.note.letter, written));
+
 	function isRight(key: string): boolean {
 		if (step === 'note') return key === current.note.letter;
+		if (step === 'accidental') return key === sounding;
 		if (step === 'string') return options.some((o) => o.string === Number(key));
 		if (step === 'finger') return options.some((o) => o.finger === key);
 		if (key === 'open') return options.some(isOpen);
@@ -322,7 +376,9 @@
 	}
 
 	function chipLabel(key: string, asked: StepId = step): string {
-		if (asked === 'note') return noteLabel(settings.key, key);
+		// With accidentals on the sign is asked on its own, so the letter stays bare.
+		if (asked === 'note') return settings.accidentals ? key : noteLabel(settings.key, key);
+		if (asked === 'accidental') return ACCIDENTAL_NAMES[key as Accidental];
 		if (asked === 'string') return `${def.strings[Number(key)].replace(/\d+$/, '')} string`;
 		if (asked === 'finger') return key === 'open' ? 'Open' : `Finger ${FINGERS[key].label}`;
 		return key === 'open' ? 'Open' : positionName(key as PositionId, settings.positionSystem);
@@ -335,7 +391,10 @@
 	 * the same one the reveal shows.
 	 */
 	function rightLabel(asked: StepId, from: Fingering[]): string {
-		if (asked === 'note') return chipLabel(current.note.letter, asked);
+		// A miss on the letter ends the question before the sign is asked, so the
+		// right answer is given in full: "B♭", not "B".
+		if (asked === 'note') return noteLabel(settings.key, current.note.letter, written);
+		if (asked === 'accidental') return chipLabel(sounding, asked);
 		const f = preferredFingering(from);
 		if (!f) return '';
 		if (asked === 'string') return chipLabel(String(f.string), asked);
@@ -346,17 +405,21 @@
 	const promptText = $derived(
 		step === 'note'
 			? 'Name this note'
-			: step === 'string'
-				? 'Which string?'
-				: step === 'finger'
-					? 'Which finger?'
-					: 'Which position?'
+			: step === 'accidental'
+				? 'Sharp, natural, or flat?'
+				: step === 'string'
+					? 'Which string?'
+					: step === 'finger'
+						? 'Which finger?'
+						: 'Which position?'
 	);
 
 	// After a wrong answer `options` holds just the fingering a teacher would
 	// have written in, so it doubles as the answer key for the reveal.
 	const revealText = $derived.by(() => {
-		if (step === 'note') return `It was ${noteLabel(settings.key, current.note.letter)}`;
+		if (step === 'note') return `It was ${noteLabel(settings.key, current.note.letter, written)}`;
+		if (step === 'accidental')
+			return `It was ${current.note.letter}${ACCIDENTAL_SYMBOLS[sounding]}`;
 		const f = options[0];
 		if (!f) return '';
 		if (step === 'string') return `It was the ${def.strings[f.string].replace(/\d+$/, '')} string`;
@@ -411,7 +474,7 @@
 
 	// The steps in the order they are asked, so a note's wrong answers read in
 	// the order the student met them.
-	const ORDERED_STEPS: StepId[] = ['note', 'string', 'position', 'finger'];
+	const ORDERED_STEPS: StepId[] = ['note', 'accidental', 'string', 'position', 'finger'];
 
 	/**
 	 * The notes that went wrong, the ones missed most often first. This is the
@@ -419,8 +482,8 @@
 	 */
 	const report = $derived(
 		Object.entries(tally)
-			.map(([index, note]) => ({
-				index: Number(index),
+			.map(([key, note]) => ({
+				key,
 				...note,
 				// Read back in the order the student met them.
 				misses: [...note.misses].sort(
@@ -432,12 +495,12 @@
 	);
 
 	/**
-	 * The missed note as it was read on the staff. A picture is what the student
-	 * has to recognise — 'A4' is a name for it they have not learnt yet.
+	 * The missed note as it was read on the staff, sign and all. A picture is
+	 * what the student has to recognise — 'A4' is a name for it they have not
+	 * learnt yet.
 	 */
-	function reportNote(index: number): Note {
-		const { letter, octave } = fromDiatonicIndex(index);
-		return { letter, octave, value: 'whole' };
+	function reportNote(note: NoteTally): Note {
+		return noteAt(note.index, [], note.accidental);
 	}
 
 	function recordHighScore() {
@@ -578,11 +641,11 @@
 					<h3>Notes missed</h3>
 					{#if report.length}
 						<ul class="misses">
-							{#each report as note (note.index)}
+							{#each report as note (note.key)}
 								<li>
 									<!-- The note itself, drawn as it was asked. -->
 									<div class="missed-staff">
-										<Staff {clef} keySig={settings.key} note={reportNote(note.index)} />
+										<Staff {clef} keySig={settings.key} note={reportNote(note)} />
 									</div>
 									<div class="missed-body">
 										<p class="count">Missed {note.wrong} of {note.asked}</p>

@@ -13,7 +13,8 @@ Configure the exercise on the left; a live student preview updates on the right.
 - **Key signatures** — none, 1–7 sharps, 1–7 flats (pick several for a mix); shown
   on the staff and reflected in the correct answer
 - **Note values** — whole, half, quarter (visual)
-- **Accidentals** — allow explicit sharps/flats on notes
+- **Accidentals** — write sharps, flats and naturals in front of some notes, on top
+  of the key signature; the student then names the sign as well as the letter
 - **Helpers** — blue letter labels beside the staff
 - **Challenge mode** — a question limit and/or time limit, and whether students may
   retry a wrong answer (multiple attempts)

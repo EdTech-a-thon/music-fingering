@@ -5,11 +5,33 @@ export type Clef = 'treble' | 'bass' | 'alto' | 'tenor';
 export type Position = 'both' | 'lines' | 'spaces';
 export type NoteValue = 'whole' | 'half' | 'quarter';
 
+/** A sign written in front of a note, overriding the key signature for it. */
+export type Accidental = 'sharp' | 'natural' | 'flat';
+
 export interface Note {
 	letter: string; // 'A'..'G'
 	octave: number; // scientific pitch octave, 4 = the octave of middle C
 	value: NoteValue; // whole / half / quarter (visual only)
+	/** The sign written before the note, or null to read the key signature. */
+	accidental?: Accidental | null;
 }
+
+export const ALL_ACCIDENTALS: Accidental[] = ['sharp', 'natural', 'flat'];
+
+export const ACCIDENTAL_SYMBOLS: Record<Accidental, string> = {
+	sharp: '♯',
+	natural: '♮',
+	flat: '♭'
+};
+
+export const ACCIDENTAL_NAMES: Record<Accidental, string> = {
+	sharp: 'Sharp',
+	natural: 'Natural',
+	flat: 'Flat'
+};
+
+/** Half steps each sign moves a note by. */
+const ACCIDENTAL_SHIFT: Record<Accidental, number> = { sharp: 1, natural: 0, flat: -1 };
 
 // The musical alphabet, ordered so that one step up the staff = the next letter.
 const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -102,22 +124,53 @@ export function accidentalSteps(key: KeyId, clef: Clef): number[] {
 
 /**
  * Half steps the key signature shifts a letter by: +1 for a sharp, -1 for a
- * flat, 0 for a letter the key leaves alone. Everything that works out a
- * fingering goes through here, which is why flats needed no arithmetic of their
- * own — a lowered note is just a negative shift.
+ * flat, 0 for a letter the key leaves alone. A sign written in front of the
+ * note wins over the key. Everything that works out a fingering goes through
+ * here, which is why flats needed no arithmetic of their own — a lowered note
+ * is just a negative shift.
  */
-export function alteration(key: KeyId, letter: string): number {
+export function alteration(key: KeyId, letter: string, written?: Accidental | null): number {
+	if (written) return ACCIDENTAL_SHIFT[written];
 	if (KEY_SHARPS[key].includes(letter)) return 1;
 	if (KEY_FLATS[key].includes(letter)) return -1;
 	return 0;
 }
 
+/**
+ * What the note comes out as once the key and any written sign are applied:
+ * the answer to "sharp, natural or flat?". F in D major is sharp even with
+ * nothing written in front of it.
+ */
+export function soundingAccidental(
+	key: KeyId,
+	letter: string,
+	written?: Accidental | null
+): Accidental {
+	const shift = alteration(key, letter, written);
+	return shift > 0 ? 'sharp' : shift < 0 ? 'flat' : 'natural';
+}
+
 /** "F♯" in a key that sharpens F, "B♭" in one that flattens B, else plain. */
-export function noteLabel(key: KeyId, letter: string): string {
-	const shift = alteration(key, letter);
+export function noteLabel(key: KeyId, letter: string, written?: Accidental | null): string {
+	const shift = alteration(key, letter, written);
 	if (shift > 0) return `${letter}♯`;
 	if (shift < 0) return `${letter}♭`;
 	return letter;
+}
+
+/**
+ * The signs worth writing in front of this letter in this key. A sign the key
+ * already gives is left out, since it would change nothing, and so are the
+ * spellings that trip beginners up: no E♯ or B♯, no C♭ or F♭.
+ */
+export function writableAccidentals(key: KeyId, letter: string): Accidental[] {
+	const already = soundingAccidental(key, letter);
+	return ALL_ACCIDENTALS.filter((a) => {
+		if (a === already) return false;
+		if (a === 'sharp') return !['E', 'B'].includes(letter);
+		if (a === 'flat') return !['C', 'F'].includes(letter);
+		return true;
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -159,9 +212,9 @@ export function pitchOfIndex(index: number): number {
 }
 
 /** What the note actually sounds in this key — the pitch the fingering plays. */
-export function pitchInKey(index: number, key: KeyId): number {
+export function pitchInKey(index: number, key: KeyId, written?: Accidental | null): number {
 	const { letter, octave } = fromDiatonicIndex(index);
-	return chromaticPitch(letter, octave) + alteration(key, letter);
+	return chromaticPitch(letter, octave) + alteration(key, letter, written);
 }
 
 export function noteName(index: number): string {
@@ -242,11 +295,14 @@ export function notesToAsk(opts: RangeOptions): number[] {
 	return fallbacks.length ? fallbacks : [lowIndex];
 }
 
-// Dress a staff position up as a question. Accidentals are never written in: the
-// key signature carries them, so a note is always a plain letter.
-export function noteAt(index: number, values: NoteValue[]): Note {
+// Dress a staff position up as a question, with a sign in front of it or not.
+export function noteAt(
+	index: number,
+	values: NoteValue[],
+	accidental: Accidental | null = null
+): Note {
 	const { letter, octave } = fromDiatonicIndex(index);
-	return { letter, octave, value: values.length ? pick(values) : 'whole' };
+	return { letter, octave, value: values.length ? pick(values) : 'whole', accidental };
 }
 
 // One note picked at random from everything the settings allow.

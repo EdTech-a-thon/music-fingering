@@ -20,6 +20,7 @@ import {
 	parseNoteName,
 	pitchInKey,
 	pitchOfIndex,
+	type Accidental,
 	type Clef,
 	type KeyId
 } from './music';
@@ -300,15 +301,17 @@ export function isOpen(f: Fingering): boolean {
  * Every way the given note can be played, in no particular order. An empty list
  * means the note is out of reach with the fingerings being taught — in D major
  * a written C is C♯, so on the cello's C string it needs the extended first
- * finger rather than the open string.
+ * finger rather than the open string. A sign written in front of the note
+ * overrides the key for that note alone.
  */
 export function fingeringsFor(
 	inst: Instrument,
 	noteIndex: number,
-	opts: FingeringOptions = defaultFingeringOptions(inst)
+	opts: FingeringOptions = defaultFingeringOptions(inst),
+	accidental: Accidental | null = null
 ): Fingering[] {
 	const def = INSTRUMENTS[inst];
-	const pitch = pitchInKey(noteIndex, opts.key);
+	const pitch = pitchInKey(noteIndex, opts.key, accidental);
 	const found: Fingering[] = [];
 
 	def.strings.forEach((open, string) => {
