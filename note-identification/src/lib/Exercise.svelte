@@ -8,7 +8,7 @@
 	// on screen so the student sees the whole fingering come together. A wrong
 	// answer at any step ends the question there and shows what it should have
 	// been.
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import Staff from './Staff.svelte';
 	import {
 		ACCIDENTAL_NAMES,
@@ -48,7 +48,7 @@
 		type PositionId
 	} from './strings';
 
-	let { settings }: { settings: Settings } = $props();
+	let { settings, title = 'Clef Coach' }: { settings: Settings; title?: string } = $props();
 
 	const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 
@@ -517,6 +517,32 @@
 		}
 	}
 
+	// --- saving the results as a PDF ---
+	//
+	// The student types their name, then the browser's own print window opens,
+	// where "Save as PDF" is one of the choices. The page's print styles hide
+	// everything but the results.
+	let saveDialog = $state<HTMLDialogElement>();
+	let studentName = $state('');
+	let finishedAt = $state(new Date());
+
+	function openSaveDialog() {
+		finishedAt = new Date();
+		saveDialog?.showModal();
+	}
+
+	async function savePdf(event: SubmitEvent) {
+		event.preventDefault();
+		saveDialog?.close();
+		// Wait for the name to appear on the page before it is printed.
+		await tick();
+		// Browsers suggest the page title as the file name.
+		const pageTitle = document.title;
+		document.title = `${studentName.trim()} - ${title} - ${finishedAt.toLocaleDateString()}`;
+		window.print();
+		document.title = pageTitle;
+	}
+
 	onDestroy(() => {
 		clearInterval(ticker);
 		clearTimeout(revealTimer);
@@ -629,7 +655,13 @@
 			</div>
 		{/if}
 	{:else}
-		<div class="results">
+		<div class="results print-area">
+			<!-- Only on the saved PDF: who did it, what it was, and when. -->
+			<div class="print-only">
+				<p class="print-name">{studentName.trim()}</p>
+				<p>{title}</p>
+				<p>{finishedAt.toLocaleString()}</p>
+			</div>
 			<h2 class:high={isHighScore}>{isHighScore ? 'New High Score!' : 'Challenge complete'}</h2>
 			<p class="bigscore">{correct}/{attempted}</p>
 			<p class="detail">{percent}% correct · {formatTime(elapsedMs)}</p>
@@ -672,10 +704,34 @@
 				</section>
 			{/if}
 
-			<div class="result-actions">
+			<div class="result-actions no-print">
 				<button type="button" class="btn-primary" onclick={start}>Start Challenge</button>
+				<button type="button" class="btn-ghost" onclick={openSaveDialog}>Save as PDF</button>
 			</div>
 		</div>
+
+		<dialog bind:this={saveDialog} class="save-dialog no-print" aria-labelledby="save-title">
+			<form onsubmit={savePdf}>
+				<h3 id="save-title">Save your results</h3>
+				<label>
+					Your name
+					<!-- svelte-ignore a11y_autofocus -->
+					<input type="text" bind:value={studentName} required autocomplete="name" autofocus />
+				</label>
+				<p class="hint">
+					Your browser's print window will open. Choose “Save as PDF” to keep a copy you can share
+					with your teacher.
+				</p>
+				<div class="dialog-actions">
+					<button type="button" class="btn-ghost" onclick={() => saveDialog?.close()}>
+						Cancel
+					</button>
+					<button type="submit" class="btn-primary" disabled={!studentName.trim()}>
+						Save as PDF
+					</button>
+				</div>
+			</form>
+		</dialog>
 	{/if}
 </div>
 
@@ -910,6 +966,73 @@
 	.clean {
 		color: #555;
 		font-size: 0.9rem;
+	}
+	.print-only {
+		display: none;
+		margin-bottom: 1rem;
+		color: #555;
+		font-size: 0.9rem;
+	}
+	.print-name {
+		color: #1a1a1a;
+		font-size: 1.25rem;
+		font-weight: 800;
+	}
+	@media print {
+		.print-only {
+			display: block;
+		}
+		.results {
+			border: none;
+		}
+		/* Keep each missed note whole rather than split across two pages. */
+		.misses > li {
+			break-inside: avoid;
+		}
+	}
+	.save-dialog {
+		margin: auto;
+		width: min(24rem, calc(100% - 2rem));
+		border: none;
+		border-radius: var(--radius);
+		padding: 1.5rem;
+		box-shadow: 0 10px 40px rgb(0 0 0 / 0.2);
+	}
+	.save-dialog::backdrop {
+		background: rgb(0 0 0 / 0.4);
+	}
+	.save-dialog h3 {
+		font-size: 1.15rem;
+		font-weight: 700;
+		margin-bottom: 1rem;
+	}
+	.save-dialog label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+	.save-dialog input {
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		font-size: 1rem;
+		font-weight: 400;
+	}
+	.save-dialog input:focus {
+		outline: 2px solid var(--blue);
+		border-color: var(--blue);
+	}
+	.hint {
+		color: #555;
+		font-size: 0.85rem;
+		margin: 0.75rem 0 1.25rem;
+	}
+	.dialog-actions {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: flex-end;
 	}
 	.result-actions,
 	.practice-actions {
