@@ -14,12 +14,12 @@
 </script>
 
 <div class="challenge">
-	<header>
+	<header class="no-print">
 		<h1>{title}</h1>
 	</header>
 
 	{#key page.url.search}
-		<Exercise {settings} />
+		<Exercise {settings} {title} />
 	{/key}
 </div>
 
